@@ -1,0 +1,21 @@
+# --- ทั่วไป ---
+.env
+.DS_Store
+
+# --- Frontend (Next.js) ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+
+# --- Backend (Rust) ---
+backend/target/
+backend/Cargo.lock
+
+# --- AI Service (Python) ---
+ai-service/__pycache__/
+ai-service/venv/
+ai-service/env/
+*.pt
+*.onnx
+# (กูใส่ *.pt ไว้กันไฟล์ best.pt ของมึงหลุดขึ้น Git ถ้าจะแชร์ให้เพื่อน ให้ส่งผ่าน Google Drive แทน)
