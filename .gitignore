@@ -1,21 +1,37 @@
-# --- ทั่วไป ---
+# --- General ---
 .env
 .DS_Store
+Thumbs.db
+*.log
 
 # --- Frontend (Next.js) ---
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/build/
 frontend/.env*.local
-
-# --- Backend (Rust) ---
-backend/target/
-backend/Cargo.lock
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
 
 # --- AI Service (Python) ---
 ai-service/__pycache__/
 ai-service/venv/
+ai-service/.venv/
 ai-service/env/
+ai-service/temp_workspace/
+ai-service/videorecord/
+ai-service/*.mp4
+ai-service/*.jpg
+
+# --- AI Models ---
 *.pt
 *.onnx
-# (กูใส่ *.pt ไว้กันไฟล์ best.pt ของมึงหลุดขึ้น Git ถ้าจะแชร์ให้เพื่อน ให้ส่งผ่าน Google Drive แทน)
+*.engine
+# Note: Large model files should be shared via cloud storage (e.g., Google Drive) 
+# instead of Git to avoid repository bloat.
+
+# --- Database ---
+# (If using local SQLite or exports)
+*.db
+*.sqlite3
