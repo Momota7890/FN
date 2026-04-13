@@ -8,6 +8,7 @@ export const API_ENDPOINTS = {
   REGISTER: `${API_BASE_URL}/api/auth/register`,
   LOGIN: `${API_BASE_URL}/api/auth/login`,
   EVENTS: `${API_BASE_URL}/api/events`,
+  STATS: `${API_BASE_URL}/api/stats`,
   OFFER: `${API_BASE_URL}/offer`,
   PROCESS_IMAGE: `${API_BASE_URL}/process-image`,
   PROCESS_VIDEO: `${API_BASE_URL}/process-video`,

@@ -149,7 +149,7 @@ relay = MediaRelay()
 # ==========================================
 class VideoTransformTrack(VideoStreamTrack):
     # 🚀 เพิ่มการรับค่า pool, track, pc, record_path, threshold และ lat/lon
-    def __init__(self, track, pc, record_path, threshold=0.5, pool=None, lat=0.0, lon=0.0):
+    def __init__(self, track, pc, record_path, threshold=0.565, pool=None, lat=0.0, lon=0.0):
         super().__init__()
         self.track = track
         self.pc = pc
@@ -409,16 +409,60 @@ async def create_event(payload: EventPayload, request: Request):
         ''', payload.class_name, payload.confidence, payload.lat, payload.lon)
     return {"message": "Event saved"}
 
+@app.get("/api/stats")
+async def get_stats(request: Request):
+    pool = request.app.state.db_pool
+    if not pool:
+        return {"total_24h": 0, "trend": 0, "avg_confidence": "0.0", "top_type": "N/A"}
+    
+    async with pool.acquire() as connection:
+        # 1. Total 24h
+        total_24h = await connection.fetchval('''
+            SELECT count(*) FROM events WHERE created_at >= NOW() - INTERVAL '24 hours'
+        ''')
+        
+        # 2. Previous 24h (for trend)
+        total_prev_24h = await connection.fetchval('''
+            SELECT count(*) FROM events 
+            WHERE created_at >= NOW() - INTERVAL '48 hours' 
+            AND created_at < NOW() - INTERVAL '24 hours'
+        ''')
+        
+        trend = 0
+        if total_prev_24h > 0:
+            trend = int(((total_24h - total_prev_24h) / total_prev_24h) * 100)
+        elif total_24h > 0:
+            trend = 100
+            
+        # 3. Avg Confidence (24h)
+        avg_conf = await connection.fetchval('''
+            SELECT AVG(confidence) FROM events WHERE created_at >= NOW() - INTERVAL '24 hours'
+        ''')
+        
+        # 4. Top Type (24h)
+        top_type = await connection.fetchval('''
+            SELECT class_name FROM events 
+            WHERE created_at >= NOW() - INTERVAL '24 hours'
+            GROUP BY class_name ORDER BY count(*) DESC LIMIT 1
+        ''')
+
+        return {
+            "total_24h": total_24h or 0,
+            "trend": trend,
+            "avg_confidence": f"{float(avg_conf or 0):.1f}",
+            "top_type": top_type or "N/A"
+        }
+
 @app.get("/api/events")
 async def get_events(request: Request):
     pool = request.app.state.db_pool
     if not pool:
         return []
     async with pool.acquire() as connection:
-        # ดึงประวัติ 50 รายการล่าสุด
+        # ดึงประวัติทั้งหมด (ไม่จำกัด 50 อีกต่อไป)
         rows = await connection.fetch('''
             SELECT id, class_name, confidence, lat, lon, created_at 
-            FROM events ORDER BY created_at DESC LIMIT 50
+            FROM events ORDER BY created_at DESC
         ''')
         
         events = []

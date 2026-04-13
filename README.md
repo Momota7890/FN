@@ -1,62 +1,85 @@
-# FOD Runway Monitoring System (AI-Powered)
+# 🛸 FOD Runway Monitoring System (Pro Edition)
 
-Advanced AI-powered Foreign Object Debris (FOD) Detection & Analysis system for airport runways. Built with Next.js and FastAPI (Python), utilizing YOLOv8 for real-time computer vision.
+**Intelligent AI-Powered Foreign Object Debris (FOD) Detection, Analysis & Tracking System.**
 
-## 🚀 Project Structure
-
-- `/frontend`: Next.js application (React, Tailwind CSS, Recharts)
-- `/ai-service`: Python FastAPI backend (YOLOv8, WebRTC, PostgreSQL)
+This system provides a enterprise-grade solution for airport runway safety, combining real-time computer vision detection (YOLOv8) with advanced data analytics and spatial mapping to identify, log, and track potential hazards.
 
 ---
 
-## 🛠️ Requirements & Installation
+## ✨ Key Features
 
-### 1. AI Service (Backend)
-Requires Python 3.10+ and a CUDA-compatible GPU (recommended: RTX 30-series or higher).
+### 🖥️ Enterprise Dashboard
+- **Total Detections (24h)**: Accurate server-side statistics with real-time trend analysis.
+- **Top FOD Type KPI**: Instantly identify the most frequent hazard categories.
+- **Visual Analytics**: Interactive bar charts and timeline area charts for detection distribution.
+- **Intelligent Visual Map**: Topographic mapping with markers and a **high-vibrancy spectral heatmap** for density analysis.
 
-**Setup:**
-1. Navigate to `ai-service/`.
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure `.env` in the project root:
-   ```env
-   DATABASE_URL=postgresql://user:pass@localhost:5432/db
-   SECRET_KEY=your_secret_key
-   MODEL_PATH=model/best.pt
-   ```
-5. Run the server:
-   ```bash
-   uvicorn main:app --reload
-   ```
+### 🎥 Real-Time Monitoring
+- **WebRTC Live Stream**: Low-latency video transmission directly to the browser.
+- **AI-Overlay**: Real-time bounding box and classification display.
+- **Smart Connection States**: Interactive UI feedback (Ready, Connecting, Live) for operator clarity.
 
-### 2. Frontend
-Requires Node.js 18+ and npm/yarn.
-
-**Setup:**
-1. Navigate to `frontend/`.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
+### 📋 Data Management
+- **Detailed Logs**: paginated detection history with class-specific color coding.
+- **GPS Integration**: All detections are logged with precise coordinates for spatial tracking.
+- **CSV Export**: Fully formatted history export including timestamps and classification for offline analysis.
 
 ---
 
-## 🔒 Security Note
-The `.gitignore` file is configured to exclude sensitive files like `.env`, `node_modules/`, and `venv/`. **Do NOT commit the `.env` file to public repositories.**
+## 🛠️ Technology Stack
 
-## 📊 Analytics & Monitoring
-- Real-time WebRTC streaming with AI overlay.
-- Historical data logging to PostgreSQL.
-- Interactive Dashboard using Recharts.
-<a>
+- **Frontend**: Next.js 16 (React 19), Tailwind CSS 4, Recharts, Leaflet, Framer Motion.
+- **AI Service**: Python 3.10+, FastAPI, YOLOv8 (Ultralytics), aiortc (WebRTC), OpenCV.
+- **Database**: PostgreSQL (High-performance event logging).
+
+---
+
+## 🚀 Installation & Setup
+
+### 1. AI Service (Python Backend)
+Requires Python 3.10+ and a CUDA-compatible GPU (recommended).
+
+```bash
+# Navigate to service directory
+cd ai-service
+
+# Create and activate virtual environment
+python -m venv venv
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure .env (Root Directory)
+# DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
+# MODEL_PATH=model/best.pt
+```
+
+### 2. Frontend (Next.js)
+Requires Node.js 18+.
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+---
+
+## 🔒 Security & Environment
+- **Environment Variables**: Managed via `.env` in the root directory. Never commit this file.
+- **Database**: Ensure PostgreSQL is running and accessible via the provided `DATABASE_URL`.
+
+---
+
+## 👨‍💻 Project Structure
+- `/frontend`: User interface and data visualization.
+- `/ai-service`: Computer vision engine and API layer.
+- `/ai-service/model`: YOLOv8 weight files (.pt).
+- `/ai-service/videorecord`: storage for analyzed video buffers.
