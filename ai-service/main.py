@@ -281,12 +281,16 @@ async def offer(request: Request):
 # ==========================================
 def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> dict:
     """Synchronous video processing — runs in thread executor to avoid blocking the async event loop"""
+    import subprocess
+
     cap = cv2.VideoCapture(temp_input)
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0 or fps != fps:
         fps = 30.0
 
-    writer = imageio.get_writer(temp_output, fps=fps, codec='libx264')
+    # Pass 1: เขียน video ดิบ (moov อยู่ท้ายไฟล์ปกติ)
+    raw_output = temp_output.replace('.mp4', '_raw.mp4')
+    writer = imageio.get_writer(raw_output, fps=fps, codec='libx264')
     unique_detections = {}
 
     while cap.isOpened():
@@ -320,6 +324,23 @@ def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> 
 
     cap.release()
     writer.close()
+
+    # Pass 2: Remux ด้วย +faststart ให้ moov อยู่ต้นไฟล์ → browser เล่นได้ทันทีแบบ stream
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run(
+            [ffmpeg_exe, '-i', raw_output, '-c', 'copy', '-movflags', '+faststart', '-y', temp_output],
+            check=True, capture_output=True
+        )
+        print(f"✅ Video remuxed with faststart: {temp_output}")
+    except Exception as e:
+        print(f"⚠️ faststart remux failed ({e}) — using raw output")
+        shutil.move(raw_output, temp_output)
+    finally:
+        if os.path.exists(raw_output):
+            os.remove(raw_output)
+
     return unique_detections
 
 

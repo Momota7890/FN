@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { API_ENDPOINTS } from "@/lib/api";
+import { API_ENDPOINTS, apiFetch } from "@/lib/api";
 
 
 interface Detection {
@@ -30,6 +30,10 @@ export default function MonitoringPage() {
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
+
+  // 🎬 Blob URL สำหรับวิดีโอ (bypass ngrok interstitial)
+  const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
 
   // ✅ นิยามโดยใช้ useCallback เพื่อให้ stopWebRTC เล่าหลาย (stable reference) และ useEffect depสถูกต้อง
   const stopWebRTC = useCallback(() => {
@@ -75,6 +79,27 @@ export default function MonitoringPage() {
     return () => stopWebRTC();
   }, [router, stopWebRTC]);
 
+  // ✅ Cleanup blob URL เมื่อ unmount
+  useEffect(() => {
+    return () => { if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl); };
+  }, [videoBlobUrl]);
+
+  // ✅ Fetch video เป็น blob เพื่อ bypass ngrok interstitial warning
+  // <video src="ngrok_url"> จะโดน ngrok block ด้วย text/html แต่ fetch() + header ผ่านได้
+  useEffect(() => {
+    if (mode !== "video" || !resultVideoUrl) return;
+    setVideoLoading(true);
+    setVideoBlobUrl(null);
+    fetch(resultVideoUrl, { headers: { 'ngrok-skip-browser-warning': 'skip' } })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => setVideoBlobUrl(URL.createObjectURL(blob)))
+      .catch(err => console.error('Video fetch error:', err))
+      .finally(() => setVideoLoading(false));
+  }, [mode, resultVideoUrl]);
+
   // 🚀 ฟังก์ชันวิเคราะห์ไฟล์ใหม่ ( Re-upload )
   const handleReUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -89,7 +114,7 @@ export default function MonitoringPage() {
 
     try {
       const endpoint = file.type.startsWith("image/") ? API_ENDPOINTS.PROCESS_IMAGE : API_ENDPOINTS.PROCESS_VIDEO;
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: "POST",
         body: formData
       });
@@ -158,7 +183,7 @@ export default function MonitoringPage() {
       const savedLat = localStorage.getItem("fod_lat") || "0.0";
       const savedLon = localStorage.getItem("fod_lon") || "0.0";
 
-      const response = await fetch(API_ENDPOINTS.OFFER, {
+      const response = await apiFetch(API_ENDPOINTS.OFFER, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -241,7 +266,16 @@ export default function MonitoringPage() {
             </>
           )}
 
-          {mode === "video" && resultVideoUrl && <video src={resultVideoUrl} controls autoPlay className="w-full aspect-video bg-black object-contain rounded-xl border border-green-500" />}
+          {mode === "video" && (
+            videoLoading
+              ? <div className="flex flex-col items-center gap-3 text-slate-400">
+                  <div className="animate-spin w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full" />
+                  <p className="text-sm font-mono">Loading video...</p>
+                </div>
+              : videoBlobUrl
+                ? <video src={videoBlobUrl} controls autoPlay className="w-full aspect-video bg-black object-contain rounded-xl border border-green-500" />
+                : resultVideoUrl && <p className="text-red-400 text-sm text-center">⚠️ Video unavailable — check backend connection</p>
+          )}
           {mode === "image" && resultImage && <img src={resultImage} alt="Result" className="w-full max-h-[600px] object-contain rounded-xl border border-purple-500" />}
         </div>
 
@@ -256,7 +290,7 @@ export default function MonitoringPage() {
               </button>
             ) : (
               <label className={`flex items-center justify-center gap-2 w-full py-4 rounded-xl font-bold text-lg cursor-pointer transition-all border border-blue-500/30 ${isProcessing ? 'bg-gray-700' : 'bg-blue-600/20 hover:bg-blue-600/40 text-blue-400'}`}>
-                <input type="file" className="hidden" onChange={handleReUpload} accept="image/*,video/*" disabled={isProcessing} />
+                <input type="file" className="hidden" onChange={handleReUpload} accept={mode === "image" ? "image/jpeg,image/png,image/webp,image/bmp,image/*" : "video/mp4,video/*"} disabled={isProcessing} />
                 {isProcessing ? "⏳ AI Processing..." : "🔄 Upload New File"}
               </label>
             )}

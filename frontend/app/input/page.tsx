@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { API_ENDPOINTS } from "@/lib/api";
+import { API_ENDPOINTS, apiFetch } from "@/lib/api";
 import API_BASE_URL from "@/lib/api";
 import Link from "next/link";
 
@@ -130,7 +130,7 @@ export default function InputPage() {
 
       try {
         const endpoint = API_ENDPOINTS.PROCESS_IMAGE;
-        const res = await fetch(endpoint, { 
+        const res = await apiFetch(endpoint, { 
           method: "POST", 
           body: formData 
         });
@@ -162,7 +162,7 @@ export default function InputPage() {
 
       try {
         const endpoint = API_ENDPOINTS.PROCESS_VIDEO;
-        const res = await fetch(endpoint, { 
+        const res = await apiFetch(endpoint, { 
           method: "POST", 
           body: formData 
         });
@@ -215,8 +215,10 @@ export default function InputPage() {
               <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
               
               {!imagePreview ? (
-                <div onClick={() => fileInputRef.current?.click()} className="h-32 border-2 border-dashed border-gray-500 hover:border-purple-400 rounded-lg flex items-center justify-center cursor-pointer transition-colors bg-gray-800/50">
+                <div onClick={() => fileInputRef.current?.click()} className="h-32 border-2 border-dashed border-gray-500 hover:border-purple-400 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors bg-gray-800/50 group gap-1">
+                  <span className="text-3xl group-hover:scale-110 transition-transform">🖼️</span>
                   <span className="text-gray-400">Click here to upload image file</span>
+                  <span className="text-xs text-gray-600 font-mono">.jpg  .jpeg  .png  .webp  .bmp</span>
                 </div>
               ) : (
                 <div className="flex items-center justify-between bg-gray-800 p-4 rounded-lg border border-gray-600">

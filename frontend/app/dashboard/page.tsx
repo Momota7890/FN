@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { API_ENDPOINTS } from "@/lib/api";
+import { API_ENDPOINTS, apiFetch } from "@/lib/api";
 import { exportToCSV } from "@/lib/dashboard-utils";
 import dynamic from "next/dynamic";
 
@@ -41,8 +41,8 @@ export default function DashboardPage() {
     try {
       // Fetch both events and stats in parallel
       const [eventsRes, statsRes] = await Promise.all([
-        fetch(API_ENDPOINTS.EVENTS),
-        fetch(API_ENDPOINTS.STATS)
+        apiFetch(API_ENDPOINTS.EVENTS),
+        apiFetch(API_ENDPOINTS.STATS)
       ]);
 
       if (!eventsRes.ok || !statsRes.ok) throw new Error("Network response was not ok");
