@@ -350,6 +350,7 @@ async def process_video(request: Request, file: UploadFile = File(...), threshol
     base_url = str(request.base_url).rstrip("/")
     return {
         "video_url": f"{base_url}/temp_videos/{output_name}",
+        "video_filename": output_name,
         "detections": list(unique_detections.values())
     }
 

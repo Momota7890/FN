@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { API_ENDPOINTS } from "@/lib/api";
+import API_BASE_URL from "@/lib/api";
 import Link from "next/link";
 
 export default function InputPage() {
@@ -169,7 +170,10 @@ export default function InputPage() {
         const data = await res.json();
         
         // เซฟลิงก์วิดีโอใหม่และ Log
-        localStorage.setItem("fod_result_video_url", data.video_url);
+        // ใช้ video_filename จาก server + API_BASE_URL ของ frontend
+        // เพื่อให้ URL ถูกต้องเสมอ ไม่ว่า backend จะรันอยู่ที่ไหน
+        const videoUrl = `${API_BASE_URL}/temp_videos/${data.video_filename}`;
+        localStorage.setItem("fod_result_video_url", videoUrl);
         localStorage.setItem("fod_result_logs", JSON.stringify(data.detections));
         router.push("/monitoring");
       } catch (err) {
