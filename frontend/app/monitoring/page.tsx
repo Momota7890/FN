@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { API_ENDPOINTS } from "@/lib/api";
+
+
+interface Detection {
+  id: number;
+  class_name: string;
+  confidence: number;
+}
 
 export default function MonitoringPage() {
   const router = useRouter();
@@ -16,13 +23,39 @@ export default function MonitoringPage() {
   const [latency, setLatency] = useState<number>(0);
   const [aiStatus, setAiStatus] = useState<string>("idle"); // idle, connecting, active, error
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null); // 🚀 เก็บพิกัดกล้องในเครื่อง
+  const localStreamRef = useRef<MediaStream | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // 🎯 State สำหรับโชว์ผลลัพธ์และ Log
+  // 🎯 State สำหรับโชวผลลัพธ์และ Log
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [detections, setDetections] = useState<any[]>([]);
+  const [detections, setDetections] = useState<Detection[]>([]);
+
+  // ✅ นิยามโดยใช้ useCallback เพื่อให้ stopWebRTC เล่าหลาย (stable reference) และ useEffect depสถูกต้อง
+  const stopWebRTC = useCallback(() => {
+    // 1. ปิดการเชื่อมต่อ WebRTC
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    // 2. 🛑 สั่งหยุด "ทุกอย่าง" ในกล้องของเครื่อง (สำคัญมาก!)
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // 3. เคลียร์มอนิเตอร์ฝั่งรับ
+    if (remoteVideoRef.current?.srcObject) {
+      (remoteVideoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      remoteVideoRef.current.srcObject = null;
+    }
+
+    setIsStreaming(false);
+    setAiStatus("idle");
+    setLatency(0);
+    setFps(0);
+  }, []);
 
   useEffect(() => {
     const savedMode = localStorage.getItem("fod_mode");
@@ -40,7 +73,7 @@ export default function MonitoringPage() {
     }
 
     return () => stopWebRTC();
-  }, [router]);
+  }, [router, stopWebRTC]);
 
   // 🚀 ฟังก์ชันวิเคราะห์ไฟล์ใหม่ ( Re-upload )
   const handleReUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,30 +178,7 @@ export default function MonitoringPage() {
     }
   };
 
-  const stopWebRTC = () => {
-    // 1. ปิดการเชื่อมต่อ WebRTC
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
 
-    // 2. 🛑 สั่งหยุด "ทุกอย่าง" ในกล้องของเครื่อง (สำคัญมาก!)
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    // 3. เคลียร์มอนิเตอร์ฝั่งรับ
-    if (remoteVideoRef.current?.srcObject) {
-      (remoteVideoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-      remoteVideoRef.current.srcObject = null;
-    }
-
-    setIsStreaming(false);
-    setAiStatus("idle");
-    setLatency(0);
-    setFps(0);
-  };
 
   // 🎨 Color mapping (Sync with Dashboard)
   const getClassColor = (name: string) => {

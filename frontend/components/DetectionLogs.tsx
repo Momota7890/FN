@@ -105,7 +105,6 @@ export default function DetectionLogs({ events, onExport }: DetectionLogsProps) 
               <th className="p-4">Confidence</th>
               <th className="p-4">Coordinates</th>
               <th className="p-4">Timestamp</th>
-              <th className="p-4 text-center">Risk Level</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700">
@@ -126,13 +125,10 @@ export default function DetectionLogs({ events, onExport }: DetectionLogsProps) 
                 </td>
                 <td className="p-4 text-slate-300 font-mono text-xs opacity-70 group-hover:opacity-100">{e.lat.toFixed(5)}, {e.lon.toFixed(5)}</td>
                 <td className="p-4 text-slate-400 text-xs">{e.created_at}</td>
-                <td className="p-4 text-center">
-                  <span className={`inline-block w-2.5 h-2.5 rounded-full ${e.confidence > 80 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]'}`}></span>
-                </td>
               </tr>
             )) : (
               <tr>
-                <td colSpan={6} className="p-10 text-center text-slate-500 italic">No debris detection logs matching your filters</td>
+                <td colSpan={5} className="p-10 text-center text-slate-500 italic">No debris detection logs matching your filters</td>
               </tr>
             )}
           </tbody>

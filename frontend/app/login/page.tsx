@@ -47,6 +47,7 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
+      console.error("Auth error:", err);
       setError("Unable to connect to server.");
     } finally {
       setLoading(false);

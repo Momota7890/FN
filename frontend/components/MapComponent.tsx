@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMap } from "react-leaflet";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 
@@ -37,7 +38,6 @@ const Circle = dynamic(() => import("react-leaflet").then(mod => mod.Circle), { 
 
 // Helper component for auto-focus that uses useMap internal to MapContainer
 const ChangeView = ({ center }: { center: [number, number] }) => {
-  const { useMap } = require("react-leaflet");
   const map = useMap();
   useEffect(() => {
     if (center[0] !== 0 && center[1] !== 0) {
@@ -94,43 +94,41 @@ export default function MapComponent({ detections, autoFocus = true, showHeatmap
             else if (det.confidence > 45) color = "#22c55e"; // Green
             else if (det.confidence > 30) color = "#06b6d4"; // Cyan
 
-            return (
-              <div key={`group-${idx}`}>
-                {/* Outer Glow (Large, faint) */}
-                <Circle
-                  center={[det.lat, det.lon]}
-                  radius={50}
-                  pathOptions={{
-                    fillColor: color,
-                    fillOpacity: 0.15,
-                    stroke: false
-                  }}
-                />
-                {/* Mid Glow */}
-                <Circle
-                  center={[det.lat, det.lon]}
-                  radius={30}
-                  pathOptions={{
-                    fillColor: color,
-                    fillOpacity: 0.3,
-                    stroke: false
-                  }}
-                />
-                {/* Core (Small, bright) */}
-                <Circle
-                  center={[det.lat, det.lon]}
-                  radius={10}
-                  pathOptions={{
-                    fillColor: color,
-                    fillOpacity: 0.6,
-                    stroke: true,
-                    color: "white",
-                    weight: 0.5,
-                    opacity: 0.4
-                  }}
-                />
-              </div>
-            );
+            return [
+              <Circle
+                key={`outer-${idx}`}
+                center={[det.lat, det.lon]}
+                radius={50}
+                pathOptions={{
+                  fillColor: color,
+                  fillOpacity: 0.15,
+                  stroke: false
+                }}
+              />,
+              <Circle
+                key={`mid-${idx}`}
+                center={[det.lat, det.lon]}
+                radius={30}
+                pathOptions={{
+                  fillColor: color,
+                  fillOpacity: 0.3,
+                  stroke: false
+                }}
+              />,
+              <Circle
+                key={`core-${idx}`}
+                center={[det.lat, det.lon]}
+                radius={10}
+                pathOptions={{
+                  fillColor: color,
+                  fillOpacity: 0.6,
+                  stroke: true,
+                  color: "white",
+                  weight: 0.5,
+                  opacity: 0.4
+                }}
+              />,
+            ];
           })
         ) : (
           detections.map((det) => (

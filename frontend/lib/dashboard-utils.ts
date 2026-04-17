@@ -65,13 +65,3 @@ export const exportToCSV = (data: EventRecord[], filename = "fod_detections_repo
   }
 };
 
-/**
- * Checks system status based on data freshness
- */
-export const getSystemStatus = (lastUpdated: string | null) => {
-  if (!lastUpdated) return "connecting";
-  
-  const lastTime = new Date().toLocaleTimeString(); // Simplified for now
-  // In a real app, we'd compare timestamps
-  return "active";
-};

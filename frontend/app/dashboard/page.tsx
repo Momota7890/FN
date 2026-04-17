@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { API_ENDPOINTS } from "@/lib/api";
-import { calculateTrend, exportToCSV } from "@/lib/dashboard-utils";
+import { exportToCSV } from "@/lib/dashboard-utils";
 import dynamic from "next/dynamic";
 
 // Dynamic import for Map to avoid SSR issues

@@ -1,29 +1,30 @@
-from fastapi import FastAPI, Request, UploadFile, File, Form 
+from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
-from aiortc.contrib.media import MediaRelay 
-from aiortc.rtcrtpsender import RTCRtpSender 
+from aiortc.contrib.media import MediaRelay
+from aiortc.rtcrtpsender import RTCRtpSender
 from ultralytics import YOLO
 import time
 import av
 import json
 import uuid
-import cv2  
-import re   
+import cv2
+import re
 import os
 import shutil
 import base64
 import numpy as np
+import imageio
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 from passlib.context import CryptContext
 from contextlib import asynccontextmanager
 import asyncpg
 from dotenv import load_dotenv
 import asyncio
-import os
 
 # 🚀 โหลดค่าจากไฟล์ .env
 load_dotenv(dotenv_path="../.env")
@@ -49,7 +50,7 @@ def verify_password(plain_password, hashed_password):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -117,18 +118,28 @@ def cleanup_temp_folder():
             except Exception as e:
                 print(f"⚠️ Cleanup: Failed to remove file {filename}: {e}")
 
+# ✅ กำหนด allowed origins จาก env หรือใช้ค่า default สำหรับ local dev
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+model = None
 print(f"Loading model from {MODEL_PATH}...")
-model = YOLO(MODEL_PATH)
-model.to('cuda:0')
-print(f"🔥 Load complete! AI running on: {model.device}")
+try:
+    import torch
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    model = YOLO(MODEL_PATH)
+    model.to(device)
+    print(f"🔥 Load complete! AI running on: {model.device}")
+except Exception as e:
+    print(f"❌ Failed to load AI model: {e}")
+    model = None
 
 # 🚀 ฟังก์ชันช่วยบันทึกลง Database
 async def save_event_to_db(pool, class_name, confidence, lat=0.0, lon=0.0):
@@ -268,45 +279,34 @@ async def offer(request: Request):
 # ==========================================
 # 🚀 ระบบที่ 2: โหมด Video (แก้จอดำด้วย imageio)
 # ==========================================
-@app.post("/process-video")
-async def process_video(request: Request, file: UploadFile = File(...), threshold: float = Form(0.5), lat: float = Form(0.0), lon: float = Form(0.0)): 
-    import imageio # 🚀 เรียกใช้ฮีโร่ของเรา
-    
-    cleanup_temp_folder()
-    print(f"🎬 Received video: {file.filename} (Threshold: {threshold}) Processing...")
-    
-    temp_input = os.path.join(TEMP_DIR, f"in_{uuid.uuid4().hex[:8]}.mp4")
-    output_name = f"out_{uuid.uuid4().hex[:8]}.mp4"
-    temp_output = os.path.join(TEMP_DIR, output_name)
-
-    with open(temp_input, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
+def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> dict:
+    """Synchronous video processing — runs in thread executor to avoid blocking the async event loop"""
     cap = cv2.VideoCapture(temp_input)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0 or fps != fps: fps = 30.0 
-    
-    # 🚀 เลิกใช้ cv2.VideoWriter แล้วให้ imageio เซฟเป็น H.264 แทน
-    writer = imageio.get_writer(temp_output, fps=fps, codec='libx264')
+    if fps == 0 or fps != fps:
+        fps = 30.0
 
+    writer = imageio.get_writer(temp_output, fps=fps, codec='libx264')
     unique_detections = {}
 
     while cap.isOpened():
         ret, frame = cap.read()
-        if not ret: break
-        
+        if not ret:
+            break
+
+        # ✅ ใช้ model.track() + ByteTrack (ต้องใช้ lapx แทน lap เพื่อหลีกเลี่ยง WDAC)
         results = model.track(source=frame, conf=threshold, persist=True, tracker="bytetrack.yaml", verbose=False, device=0)
         annotated_frame = results[0].plot()
-        
+
         if len(results[0].boxes) > 0:
             for box in results[0].boxes:
                 class_name = model.names[int(box.cls[0])]
                 conf = float(box.conf[0])
-                
+
                 if box.id is not None:
                     track_id = int(box.id[0])
                     key = f"{class_name}_{track_id}"
-                    
+
                     if key not in unique_detections or conf > unique_detections[key]["confidence"]:
                         unique_detections[key] = {
                             "id": track_id,
@@ -315,15 +315,31 @@ async def process_video(request: Request, file: UploadFile = File(...), threshol
                         }
 
         annotated_frame = cv2.resize(annotated_frame, (1280, 720), interpolation=cv2.INTER_CUBIC)
-        
-        # 🚀 ก่อนเซฟ ต้องแปลงสีจาก BGR (ของ OpenCV) เป็น RGB (สีสากล)
         rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
         writer.append_data(rgb_frame)
 
     cap.release()
-    writer.close() # 🚀 ปิดไฟล์ให้เรียบร้อย
-    
-    # 🚀 บันทึกผลลัพธ์ลง Database
+    writer.close()
+    return unique_detections
+
+
+@app.post("/process-video")
+async def process_video(request: Request, file: UploadFile = File(...), threshold: float = Form(0.5), lat: float = Form(0.0), lon: float = Form(0.0)):
+    cleanup_temp_folder()
+    print(f"🎬 Received video: {file.filename} (Threshold: {threshold}) Processing...")
+
+    temp_input = os.path.join(TEMP_DIR, f"in_{uuid.uuid4().hex[:8]}.mp4")
+    output_name = f"out_{uuid.uuid4().hex[:8]}.mp4"
+    temp_output = os.path.join(TEMP_DIR, output_name)
+
+    with open(temp_input, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 🚀 รัน video processing ใน thread pool — ไม่บล็อก async event loop
+    loop = asyncio.get_event_loop()
+    unique_detections = await loop.run_in_executor(None, _process_video_sync, temp_input, temp_output, threshold)
+
+    # บันทึกผลลัพธ์ลง Database
     pool = request.app.state.db_pool
     for det in unique_detections.values():
         await save_event_to_db(pool, det["class_name"], det["confidence"], lat, lon)
@@ -331,7 +347,6 @@ async def process_video(request: Request, file: UploadFile = File(...), threshol
     if os.path.exists(temp_input):
         os.remove(temp_input)
 
-    # 🚀 แก้ไข Hardcoded URL ให้ยืดหยุ่นขึ้น
     base_url = str(request.base_url).rstrip("/")
     return {
         "video_url": f"{base_url}/temp_videos/{output_name}",
@@ -507,13 +522,13 @@ async def register(payload: AuthPayload, request: Request):
 async def login(payload: AuthPayload, request: Request):
     pool = request.app.state.db_pool
     if not pool:
-        return {"error": "Database not connected"}
+        return JSONResponse(status_code=503, content={"error": "Database not connected"})
     async with pool.acquire() as connection:
         user = await connection.fetchrow('SELECT * FROM users WHERE username = $1', payload.username)
-        
+
         if not user or not verify_password(payload.password, user["password_hash"]):
-            return {"error": "Invalid username or password"}
-        
+            return JSONResponse(status_code=401, content={"error": "Invalid username or password"})
+
         token = create_access_token(data={"sub": user["username"]})
         return {
             "message": "Login successful!",

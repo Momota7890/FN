@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 // 🔒 หน้าที่ต้องล็อกอินก่อนถึงจะเข้าได้
 const protectedRoutes = ['/monitoring', '/dashboard', '/input'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
   const { pathname } = request.nextUrl;
 
@@ -25,7 +25,7 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// ตั้งค่า matcher เพื่อไม่ให้รัน middleware บนไฟล์รูปภาพหรือไฟล์ระบบอื่นๆ
+// ตั้งค่า matcher เพื่อไม่ให้รัน proxy บนไฟล์รูปภาพหรือไฟล์ระบบอื่นๆ
 export const config = {
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico).*)',
