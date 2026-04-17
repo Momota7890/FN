@@ -2,7 +2,7 @@
  * 🛠️ ศูนย์รวมการตั้งค่า API
  * เพื่อความสะดวกในการเปลี่ยน IP หรือ Port ในที่เดียว
  */
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "/api/proxy"; // ส่งไปที่ Next.js Server เพื่อเลี่ยง CORS ปกติ 
 
 export const API_ENDPOINTS = {
   REGISTER: `${API_BASE_URL}/api/auth/register`,
