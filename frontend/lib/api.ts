@@ -23,6 +23,7 @@ export const apiFetch = (url: string, options: RequestInit = {}): Promise<Respon
   return fetch(url, {
     ...options,
     headers: {
+      "ngrok-skip-browser-warning": "skip",
       ...(options.headers ?? {}),
     },
   });
