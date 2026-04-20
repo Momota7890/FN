@@ -181,7 +181,7 @@ export default function MonitoringPage() {
         }
       };
 
-      // 🔍 เพิ่ม Logging เพื่อตามจับจุดที่พังของ WebRTC
+      // 🔍 เพิ่ม Logging เพื่อตามจับจุดที่พังของ WebRTC ระดับลึก
       pc.onconnectionstatechange = () => {
         console.log("🟢 [Frontend] WebRTC Connection State:", pc.connectionState);
       };
@@ -192,6 +192,34 @@ export default function MonitoringPage() {
           console.error("❌ [Frontend] การเชื่อมต่อเจาะทะลุ NAT ล้มเหลว (บล็อกโดย Hotspot) จำเป็นต้องใช้ TURN Server!");
         }
       };
+
+      // 🚨 ดักจับ Error ดิบๆ จากตัวบราวเซอร์ตอนที่มันพยายามยิงแพ็กเก็ต
+      pc.onicecandidateerror = (event: any) => {
+        console.error("🔥 [WebRTC Raw Error] เจอ Error ตอนดึง IP หรือเจาะไฟร์วอลล์:", {
+          errorCode: event.errorCode, // รหัส Error เชิงลึก (เช่น 701)
+          errorText: event.errorText, // ข้อความขยายความ
+          url: event.url // STUN/TURN ตัวไหนที่ทำให้พัง
+        });
+      };
+
+      // 💡 ทริคเด็ด: วิธี "จับผิด" NAT แบบคาหนังคาเขาจากสถิติของบราวเซอร์
+      const statsWatcher = setInterval(() => {
+        if (!pc || pc.connectionState === "connected" || pc.connectionState === "closed") {
+          clearInterval(statsWatcher);
+          return;
+        }
+        pc.getStats().then(stats => {
+          stats.forEach(report => {
+            if (report.type === 'candidate-pair' && report.state === 'failed') {
+              const localCandidate = stats.get(report.localCandidateId);
+              // ถ้าประเภทเครือข่ายเป็น srflx (STUN) แล้วเชื่อมไม่ได้ คือ NAT ชัวร์ๆ
+              if (localCandidate && localCandidate.candidateType === 'srflx') {
+                console.warn("📍 ชัดเจน! หลักฐานมัดตัว NAT! ยอมให้รู้จักชื่อแต่ไม่ยอมให้ส่งข้อมูล (srflx คู่พัง):", report);
+              }
+            }
+          });
+        });
+      }, 3000); // เช็กทุก 3 วินาทีระหว่างรอเชื่อมต่อ
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);

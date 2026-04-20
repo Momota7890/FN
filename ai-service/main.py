@@ -25,7 +25,12 @@ from contextlib import asynccontextmanager
 import asyncpg
 from dotenv import load_dotenv
 import asyncio
+import logging
 
+# 🚨 เปิดตาที่สาม (Debug) ดึง Error ดิบๆ ชั้นลึกของ WebRTC Network ออกมาโชว์บน Console
+logging.basicConfig(level=logging.INFO)
+# แอบฟังแพ็กเก็ต UDP และความผิดพลาดของ STUN/TURN ในระดับวินาที
+logging.getLogger("aioice.ice").setLevel(logging.DEBUG)
 # 🚀 โหลดค่าจากไฟล์ .env
 load_dotenv(dotenv_path="../.env")
 
@@ -287,6 +292,28 @@ async def offer(request: Request):
         if pc.iceGatheringState == "complete":
             break
         await asyncio.sleep(0.1)
+
+    async def log_stats():
+        # 💡 ทริคเด็ดฝั่ง Backend: วนลูปจับผิด NAT จากสถิติไอพี
+        for _ in range(15): # ดักรอเช็กช่วง 45 วินาทีแรก
+            if pc.connectionState in ["connected", "closed", "failed"]:
+                break
+            try:
+                stats = await pc.getStats()
+                for stat in stats.values():
+                    # แกะโครงสร้างของ aiortc เช็กดู candidate-pair ที่ failed
+                    if getattr(stat, "type", "") == "candidate-pair" and getattr(stat, "state", "") == "failed":
+                        local_id = getattr(stat, "localCandidateId", None)
+                        if local_id and local_id in stats:
+                            local_cand = stats[local_id]
+                            if getattr(local_cand, "candidateType", "") == "srflx":
+                                print("📍 [Backend] ชัดเจน! หลักฐานมัดตัว NAT! ยอมให้ IP (srflx) มา แต่กำแพงบล็อกไม่ให้ส่งวิดีโอเจาะหากัน")
+            except Exception:
+                pass
+            await asyncio.sleep(3)
+
+    # แตก Task ให้ทำงานคู่ขนานไปพร้อมกับ WebRTC เพื่อจับผิด
+    asyncio.create_task(log_stats())
 
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
