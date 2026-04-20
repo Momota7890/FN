@@ -274,9 +274,14 @@ async def offer(request: Request):
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        print(f"📡 [WebRTC] Backend Connection State changed to: {pc.connectionState}")
+        print(f"📡 [WebRTC: Server] Connection State changed to: {pc.connectionState.upper()}")
+        
+        if pc.connectionState == "failed":
+            print("❌ [WebRTC: ERROR] Connection Failed: ขาดการเชื่อมต่อ หรือ ด่านไฟร์วอลล์บล็อกการส่งข้อมูล UDP อย่างสมบูรณ์")
+        elif pc.connectionState == "closed":
+            print("ℹ️ [WebRTC: INFO] Connection Closed: ผู้ใช้หยุดสตรีม หรือ ปิดหน้าต่างบราวเซอร์")
+
         if pc.connectionState == "failed" or pc.connectionState == "closed":
-            print("❌ [WebRTC] Connection failed or closed! (Possible NAT/Firewall blocking UDP)")
             if hasattr(pc, "local_video_track") and pc.local_video_track.out:
                 pc.local_video_track.out.release()
             pcs.discard(pc)
@@ -294,20 +299,25 @@ async def offer(request: Request):
         await asyncio.sleep(0.1)
 
     async def log_stats():
-        # 💡 ทริคเด็ดฝั่ง Backend: วนลูปจับผิด NAT จากสถิติไอพี
-        for _ in range(15): # ดักรอเช็กช่วง 45 วินาทีแรก
+        # 💡 วนลูปวิเคราะห์เพื่อหาหลักฐาน NAT Blocking
+        for _ in range(15): # เช็ก 45 วินาที
             if pc.connectionState in ["connected", "closed", "failed"]:
                 break
             try:
                 stats = await pc.getStats()
                 for stat in stats.values():
-                    # แกะโครงสร้างของ aiortc เช็กดู candidate-pair ที่ failed
                     if getattr(stat, "type", "") == "candidate-pair" and getattr(stat, "state", "") == "failed":
                         local_id = getattr(stat, "localCandidateId", None)
                         if local_id and local_id in stats:
                             local_cand = stats[local_id]
                             if getattr(local_cand, "candidateType", "") == "srflx":
-                                print("📍 [Backend] ชัดเจน! หลักฐานมัดตัว NAT! ยอมให้ IP (srflx) มา แต่กำแพงบล็อกไม่ให้ส่งวิดีโอเจาะหากัน")
+                                print(
+                                    "📍 [WebRTC: DIAGNOSTIC] Symmetric NAT Blocking Detected:\n"
+                                    "   เซิร์ฟเวอร์สามารถสร้าง Public IP (srflx) ได้สำเร็จ แต่ไฟร์วอลล์เครือข่ายบล็อกการเชื่อมต่อ UDP ขากลับ\n"
+                                    f"   [หลักฐาน 1] Candidate Type: {getattr(local_cand, 'candidateType', 'N/A').upper()}\n"
+                                    f"   [หลักฐาน 2] Server IP (STUN): {getattr(local_cand, 'ip', 'N/A')}:{getattr(local_cand, 'port', 'N/A')}\n"
+                                    "   [คำแนะนำ: ปรึกษาผู้ดูแลระบบเครือข่าย หรือ ใช้ TURN Server]"
+                                )
             except Exception:
                 pass
             await asyncio.sleep(3)

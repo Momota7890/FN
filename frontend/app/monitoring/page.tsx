@@ -181,28 +181,31 @@ export default function MonitoringPage() {
         }
       };
 
-      // 🔍 เพิ่ม Logging เพื่อตามจับจุดที่พังของ WebRTC ระดับลึก
+      // 🔍 ชุดดักจับและวิเคราะห์สถานะ WebRTC (Diagnostic Logging)
       pc.onconnectionstatechange = () => {
-        console.log("🟢 [Frontend] WebRTC Connection State:", pc.connectionState);
+        console.log(`[WebRTC: Client] Connection State: ${pc.connectionState.toUpperCase()}`);
       };
 
       pc.oniceconnectionstatechange = () => {
-        console.log("🧊 [Frontend] ICE Connection State:", pc.iceConnectionState);
+        console.log(`[WebRTC: ICE] State: ${pc.iceConnectionState.toUpperCase()}`);
         if (pc.iceConnectionState === "failed") {
-          console.error("❌ [Frontend] การเชื่อมต่อเจาะทะลุ NAT ล้มเหลว (บล็อกโดย Hotspot) จำเป็นต้องใช้ TURN Server!");
+          console.error(
+            "[ERROR] NAT Traversal Failed: การเจาะทะลุไฟร์วอลล์ล้มเหลว\n" +
+            "Symptom: โดนบล็อกการส่งข้อมูลแบบ UDP (พบบ่อยใน Mobile Hotspot/Corporate NAT)\n" +
+            "Resolution: จำเป็นต้องตั้งค่า TURN Server เพื่อสตรีมข้อมูลผ่านเซิร์ฟเวอร์คนกลาง"
+          );
         }
       };
 
-      // 🚨 ดักจับ Error ดิบๆ จากตัวบราวเซอร์ตอนที่มันพยายามยิงแพ็กเก็ต
       pc.onicecandidateerror = (event: any) => {
-        console.error("🔥 [WebRTC Raw Error] เจอ Error ตอนดึง IP หรือเจาะไฟร์วอลล์:", {
-          errorCode: event.errorCode, // รหัส Error เชิงลึก (เช่น 701)
-          errorText: event.errorText, // ข้อความขยายความ
-          url: event.url // STUN/TURN ตัวไหนที่ทำให้พัง
+        console.error("[ERROR] STUN/TURN Resolution Failed: ล้มเหลวในการขอ IP", {
+          errCode: event.errorCode,
+          errText: event.errorText,
+          targetUrl: event.url
         });
       };
 
-      // 💡 ทริคเด็ด: วิธี "จับผิด" NAT แบบคาหนังคาเขาจากสถิติของบราวเซอร์
+      // 💡 วิเคราะห์ลอจิกการเชื่อมต่อผ่าน getStats (ตรวจสอบ NAT)
       const statsWatcher = setInterval(() => {
         if (!pc || pc.connectionState === "connected" || pc.connectionState === "closed") {
           clearInterval(statsWatcher);
@@ -212,14 +215,20 @@ export default function MonitoringPage() {
           stats.forEach(report => {
             if (report.type === 'candidate-pair' && report.state === 'failed') {
               const localCandidate = stats.get(report.localCandidateId);
-              // ถ้าประเภทเครือข่ายเป็น srflx (STUN) แล้วเชื่อมไม่ได้ คือ NAT ชัวร์ๆ
               if (localCandidate && localCandidate.candidateType === 'srflx') {
-                console.warn("📍 ชัดเจน! หลักฐานมัดตัว NAT! ยอมให้รู้จักชื่อแต่ไม่ยอมให้ส่งข้อมูล (srflx คู่พัง):", report);
+                console.warn(
+                  "[DIAGNOSTIC] ตรวจพบ Symmetric NAT Block:\n" +
+                  "ระบบได้รับ Public IP จาก STUN (srflx) สำเร็จ แต่ไฟร์วอลล์ปฏิเสธแพ็กเก็ต UDP ที่ส่งหากัน\n" +
+                  `[หลักฐาน 1] Candidate Type: ${localCandidate.candidateType.toUpperCase()} (ถูกจัดสรรโดย STUN Server)\n` +
+                  `[หลักฐาน 2] Local End: IP ${localCandidate.ip} (Port: ${localCandidate.port})\n` +
+                  `[หลักฐาน 3] Pair State: ${report.state.toUpperCase()} (แพ็กเก็ตส่งออกไปแต่โดนทิ้งระหว่างทาง)`,
+                  report
+                );
               }
             }
           });
         });
-      }, 3000); // เช็กทุก 3 วินาทีระหว่างรอเชื่อมต่อ
+      }, 3000);
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
