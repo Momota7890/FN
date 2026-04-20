@@ -181,6 +181,18 @@ export default function MonitoringPage() {
         }
       };
 
+      // 🔍 เพิ่ม Logging เพื่อตามจับจุดที่พังของ WebRTC
+      pc.onconnectionstatechange = () => {
+        console.log("🟢 [Frontend] WebRTC Connection State:", pc.connectionState);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("🧊 [Frontend] ICE Connection State:", pc.iceConnectionState);
+        if (pc.iceConnectionState === "failed") {
+          console.error("❌ [Frontend] การเชื่อมต่อเจาะทะลุ NAT ล้มเหลว (บล็อกโดย Hotspot) จำเป็นต้องใช้ TURN Server!");
+        }
+      };
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 

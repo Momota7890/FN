@@ -269,7 +269,9 @@ async def offer(request: Request):
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
+        print(f"📡 [WebRTC] Backend Connection State changed to: {pc.connectionState}")
         if pc.connectionState == "failed" or pc.connectionState == "closed":
+            print("❌ [WebRTC] Connection failed or closed! (Possible NAT/Firewall blocking UDP)")
             if hasattr(pc, "local_video_track") and pc.local_video_track.out:
                 pc.local_video_track.out.release()
             pcs.discard(pc)
