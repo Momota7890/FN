@@ -184,6 +184,21 @@ export default function MonitoringPage() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      // 🛑 สั่งให้รอจนกว่า STUN Server จะหา Public IP ให้เสร็จ
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === "complete") {
+          resolve();
+        } else {
+          const timeout = setTimeout(() => resolve(), 3000); 
+          pc.onicegatheringstatechange = () => {
+            if (pc.iceGatheringState === "complete") {
+              clearTimeout(timeout);
+              resolve();
+            }
+          };
+        }
+      });
+
       const savedThreshold = localStorage.getItem("fod_threshold") || "0.5";
       const savedLat = localStorage.getItem("fod_lat") || "0.0";
       const savedLon = localStorage.getItem("fod_lon") || "0.0";

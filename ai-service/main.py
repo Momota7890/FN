@@ -280,6 +280,12 @@ async def offer(request: Request):
     answer = RTCSessionDescription(sdp=new_sdp, type=answer.type)
     await pc.setLocalDescription(answer)
 
+    # 🛑 รอให้ STUN Server ฝั่ง Python หา Public IP ของตัวเองให้เสร็จก่อนส่งกลับ
+    for _ in range(30): # รอสูงสุด 3 วินาที
+        if pc.iceGatheringState == "complete":
+            break
+        await asyncio.sleep(0.1)
+
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
