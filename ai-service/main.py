@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
 from ultralytics import YOLO
@@ -237,7 +237,14 @@ async def offer(request: Request):
     lat = float(params.get("lat", 0.0))
     lon = float(params.get("lon", 0.0))
 
-    pc = RTCPeerConnection()
+    pc = RTCPeerConnection(
+        configuration=RTCConfiguration(
+            iceServers=[RTCIceServer(urls=[
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ])]
+        )
+    )
     pcs.add(pc)
 
     capabilities = RTCRtpSender.getCapabilities("video")

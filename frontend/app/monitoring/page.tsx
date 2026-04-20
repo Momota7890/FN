@@ -150,7 +150,12 @@ export default function MonitoringPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
       localStreamRef.current = stream; // 🚀 จำไว้ว่าใช้กล้องตัวไหนอยู่
-      const pc = new RTCPeerConnection();
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" }
+        ]
+      });
       pcRef.current = pc;
       const dataChannel = pc.createDataChannel("ai_results");
 
