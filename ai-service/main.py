@@ -167,6 +167,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self.pool = pool
         self.lat = lat
         self.lon = lon
+        self.record_path = record_path  # 🚀 จำที่อยู่ไฟล์ไว้ remux
         self.last_saved = {} # เก็บเวลาที่บันทึกล่าสุด {track_id: timestamp}
         
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -272,6 +273,17 @@ async def offer(request: Request):
                         print(f"🛰️ GPS Updated via DataChannel: {new_lat}, {new_lon}")
             except Exception as e:
                 print(f"⚠️ Error parsing DataChannel message: {e}")
+        
+        # 🚀 ส่งชื่อไฟล์บันทึกให้ Frontend ทันทีที่ DataChannel พร้อม
+        @channel.on("open")
+        def on_open():
+            if hasattr(pc, "local_video_track"):
+                filename = os.path.basename(pc.local_video_track.record_path)
+                channel.send(json.dumps({
+                    "type": "recording_info",
+                    "filename": filename
+                }))
+                print(f"🎬 Sent recording info: {filename}")
 
     @pc.on("track")
     def on_track(track):
@@ -288,6 +300,28 @@ async def offer(request: Request):
         if pc.connectionState in ("failed", "closed"):
             if hasattr(pc, "local_video_track") and pc.local_video_track.out:
                 pc.local_video_track.out.release()
+                
+                # 🚀 เริ่มการ Remux วิดีโอให้เล่นบน Browser ได้ (+faststart)
+                raw_path = pc.local_video_track.record_path
+                if os.path.exists(raw_path):
+                    filename = os.path.basename(raw_path)
+                    output_path = os.path.join(TEMP_VIDEO_DIR, filename)
+                    
+                    print(f"🔄 Remuxing live recording: {filename}...")
+                    try:
+                        # ใช้ asyncio.create_subprocess_exec เพื่อไม่ให้บล็อก
+                        process = await asyncio.create_subprocess_exec(
+                            'ffmpeg', '-y', '-i', raw_path,
+                            '-c', 'copy', '-movflags', '+faststart',
+                            output_path,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        await process.communicate()
+                        print(f"✅ Live recording remuxed and moved to temp: {output_path}")
+                    except Exception as e:
+                        print(f"❌ Remux error: {e}")
+            
             pcs.discard(pc)
 
     await pc.setRemoteDescription(offer)

@@ -36,6 +36,7 @@ export default function MonitoringPage() {
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
+  const [recordingFilename, setRecordingFilename] = useState<string | null>(null);
 
   // 🎬 Blob URL สำหรับวิดีโอ (bypass ngrok interstitial)
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
@@ -206,6 +207,14 @@ export default function MonitoringPage() {
 
       dataChannel.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        
+        // 🎬 รับข้อมูลไฟล์บันทึกจาก Backend
+        if (data.type === "recording_info") {
+          console.log("🎬 Recording started:", data.filename);
+          setRecordingFilename(data.filename);
+          return;
+        }
+
         if (data.detections) setDetections(data.detections);
         if (data.fps) setFps(data.fps);
 
@@ -263,6 +272,7 @@ export default function MonitoringPage() {
       const answer = await response.json();
       await pc.setRemoteDescription(answer);
       setIsStreaming(true);
+      setRecordingFilename(null); // เคลียร์ชื่อไฟล์เก่า
     } catch (err) {
       stopWebRTC();
       setAiStatus("idle");
@@ -271,6 +281,28 @@ export default function MonitoringPage() {
   };
 
 
+
+  // 📥 ฟังก์ชันสำหรับดาวน์โหลดไฟล์บันทึก
+  const handleDownloadRecording = async () => {
+    if (!recordingFilename) return;
+    const downloadUrl = `${API_ENDPOINTS.STATIC_VIDEOS}/${recordingFilename}`;
+    
+    try {
+      const res = await fetch(downloadUrl, { headers: { 'ngrok-skip-browser-warning': 'skip' } });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `FOD_Recording_${recordingFilename}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Download failed:", err);
+      alert("Failed to download recording. It might still be processing.");
+    }
+  };
 
   // 🎨 Color mapping (Sync with Dashboard)
   const getClassColor = (name: string) => {
@@ -321,6 +353,16 @@ export default function MonitoringPage() {
                     System Ready<br/>
                     <span className="text-sm font-medium text-slate-500">Press "Start Live Scan" to begin</span>
                   </div>
+                  
+                  {/* 📥 ปุ่มดาวน์โหลดวิดีโอย้อนหลัง */}
+                  {recordingFilename && (
+                    <button 
+                      onClick={handleDownloadRecording}
+                      className="mt-6 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-105 active:scale-95"
+                    >
+                      <span className="text-xl">📥</span> Download Last Recording
+                    </button>
+                  )}
                 </div>
               )}
 
