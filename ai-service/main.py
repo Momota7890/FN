@@ -258,6 +258,20 @@ async def offer(request: Request):
     @pc.on("datachannel")
     def on_datachannel(channel):
         pc.data_channel = channel 
+        
+        @channel.on("message")
+        def on_message(message):
+            try:
+                data = json.loads(message)
+                if data.get("type") == "gps_update":
+                    new_lat = float(data.get("lat", 0.0))
+                    new_lon = float(data.get("lon", 0.0))
+                    if hasattr(pc, "local_video_track"):
+                        pc.local_video_track.lat = new_lat
+                        pc.local_video_track.lon = new_lon
+                        print(f"🛰️ GPS Updated via DataChannel: {new_lat}, {new_lon}")
+            except Exception as e:
+                print(f"⚠️ Error parsing DataChannel message: {e}")
 
     @pc.on("track")
     def on_track(track):

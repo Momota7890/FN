@@ -3,6 +3,7 @@
 .DS_Store
 Thumbs.db
 *.log
+PROJECT_OVERVIEW.md
 
 # --- Frontend (Next.js) ---
 frontend/node_modules/

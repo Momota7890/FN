@@ -23,8 +23,13 @@ export default function MonitoringPage() {
   const [latency, setLatency] = useState<number>(0);
   const [aiStatus, setAiStatus] = useState<string>("idle"); // idle, connecting, active, error
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 🛰️ State สำหรับ GPS (อัปเดตตลอด)
+  const [location, setLocation] = useState<{ lat: number; lon: number }>({ lat: 0, lon: 0 });
 
   // 🎯 State สำหรับโชวผลลัพธ์และ Log
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
@@ -37,11 +42,18 @@ export default function MonitoringPage() {
 
   // ✅ นิยามโดยใช้ useCallback เพื่อให้ stopWebRTC เล่าหลาย (stable reference) และ useEffect depสถูกต้อง
   const stopWebRTC = useCallback(() => {
+    // 0. หยุดการส่ง GPS
+    if (gpsIntervalRef.current) {
+      clearInterval(gpsIntervalRef.current);
+      gpsIntervalRef.current = null;
+    }
+
     // 1. ปิดการเชื่อมต่อ WebRTC
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
     }
+    dataChannelRef.current = null;
 
     // 2. 🛑 สั่งหยุด "ทุกอย่าง" ในกล้องของเครื่อง (สำคัญมาก!)
     if (localStreamRef.current) {
@@ -78,6 +90,17 @@ export default function MonitoringPage() {
 
     return () => stopWebRTC();
   }, [router, stopWebRTC]);
+
+  // 🛰️ เริ่มติดตาม GPS ของเบราว์เซอร์ตลอดเวลา
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      (err) => console.error("GPS Watch Error:", err),
+      { enableHighAccuracy: true }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
 
   // ✅ Cleanup blob URL เมื่อ unmount
   useEffect(() => {
@@ -158,6 +181,23 @@ export default function MonitoringPage() {
       });
       pcRef.current = pc;
       const dataChannel = pc.createDataChannel("ai_results");
+      dataChannelRef.current = dataChannel;
+
+      dataChannel.onopen = () => {
+        console.log("🌐 DataChannel Opened - Starting GPS updates...");
+        gpsIntervalRef.current = setInterval(() => {
+          if (dataChannelRef.current?.readyState === "open") {
+            // ดึงพิกัดล่าสุดจาก state 'location' มาส่ง
+            const gpsData = {
+              type: "gps_update",
+              lat: location.lat || parseFloat(localStorage.getItem("fod_lat") || "0.0"),
+              lon: location.lon || parseFloat(localStorage.getItem("fod_lon") || "0.0")
+            };
+            dataChannelRef.current.send(JSON.stringify(gpsData));
+            console.log("🛰️ GPS Update Sent:", gpsData);
+          }
+        }, 3000); // ส่งทุก 3 วินาที
+      };
 
       dataChannel.onmessage = (event) => {
         const data = JSON.parse(event.data);
