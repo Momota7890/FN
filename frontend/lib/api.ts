@@ -3,7 +3,7 @@
  * เพื่อความสะดวกในการเปลี่ยน IP หรือ Port ในที่เดียว
  */
 // ชี้ตรงไปที่ Ngrok (Backend) เพื่อให้เบราว์เซอร์ส่งไฟล์ใหญ่ได้ตรงๆ ไม่ผ่าน Next.js Proxy
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://d9da-2001-fb1-db-f5d8-e557-d75a-2824-319d.ngrok-free.app";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export const API_ENDPOINTS = {
   REGISTER: `${API_BASE_URL}/api/auth/register`,

@@ -181,55 +181,6 @@ export default function MonitoringPage() {
         }
       };
 
-      // 🔍 ชุดดักจับและวิเคราะห์สถานะ WebRTC (Diagnostic Logging)
-      pc.onconnectionstatechange = () => {
-        console.log(`[WebRTC: Client] Connection State: ${pc.connectionState.toUpperCase()}`);
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC: ICE] State: ${pc.iceConnectionState.toUpperCase()}`);
-        if (pc.iceConnectionState === "failed") {
-          console.error(
-            "[ERROR] NAT Traversal Failed: การเจาะทะลุไฟร์วอลล์ล้มเหลว\n" +
-            "Symptom: โดนบล็อกการส่งข้อมูลแบบ UDP (พบบ่อยใน Mobile Hotspot/Corporate NAT)\n" +
-            "Resolution: จำเป็นต้องตั้งค่า TURN Server เพื่อสตรีมข้อมูลผ่านเซิร์ฟเวอร์คนกลาง"
-          );
-        }
-      };
-
-      pc.onicecandidateerror = (event: any) => {
-        console.error("[ERROR] STUN/TURN Resolution Failed: ล้มเหลวในการขอ IP", {
-          errCode: event.errorCode,
-          errText: event.errorText,
-          targetUrl: event.url
-        });
-      };
-
-      // 💡 วิเคราะห์ลอจิกการเชื่อมต่อผ่าน getStats (ตรวจสอบ NAT)
-      const statsWatcher = setInterval(() => {
-        if (!pc || pc.connectionState === "connected" || pc.connectionState === "closed") {
-          clearInterval(statsWatcher);
-          return;
-        }
-        pc.getStats().then(stats => {
-          stats.forEach(report => {
-            if (report.type === 'candidate-pair' && report.state === 'failed') {
-              const localCandidate = stats.get(report.localCandidateId);
-              if (localCandidate && localCandidate.candidateType === 'srflx') {
-                console.warn(
-                  "[DIAGNOSTIC] ตรวจพบ Symmetric NAT Block:\n" +
-                  "ระบบได้รับ Public IP จาก STUN (srflx) สำเร็จ แต่ไฟร์วอลล์ปฏิเสธแพ็กเก็ต UDP ที่ส่งหากัน\n" +
-                  `[หลักฐาน 1] Candidate Type: ${localCandidate.candidateType.toUpperCase()} (ถูกจัดสรรโดย STUN Server)\n` +
-                  `[หลักฐาน 2] Local End: IP ${localCandidate.ip} (Port: ${localCandidate.port})\n` +
-                  `[หลักฐาน 3] Pair State: ${report.state.toUpperCase()} (แพ็กเก็ตส่งออกไปแต่โดนทิ้งระหว่างทาง)`,
-                  report
-                );
-              }
-            }
-          });
-        });
-      }, 3000);
-
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -268,6 +219,8 @@ export default function MonitoringPage() {
       await pc.setRemoteDescription(answer);
       setIsStreaming(true);
     } catch (err) {
+      stopWebRTC();
+      setAiStatus("idle");
       alert("Failed to open camera!");
     }
   };

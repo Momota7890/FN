@@ -25,12 +25,6 @@ from contextlib import asynccontextmanager
 import asyncpg
 from dotenv import load_dotenv
 import asyncio
-import logging
-
-# 🚨 เปิดตาที่สาม (Debug) ดึง Error ดิบๆ ชั้นลึกของ WebRTC Network ออกมาโชว์บน Console
-logging.basicConfig(level=logging.INFO)
-# แอบฟังแพ็กเก็ต UDP และความผิดพลาดของ STUN/TURN ในระดับวินาที
-logging.getLogger("aioice.ice").setLevel(logging.DEBUG)
 # 🚀 โหลดค่าจากไฟล์ .env
 load_dotenv(dotenv_path="../.env")
 
@@ -116,7 +110,7 @@ def cleanup_temp_folder():
     for filename in os.listdir(TEMP_DIR):
         file_path = os.path.join(TEMP_DIR, filename)
         # ถ้าไฟล์นี้ถูกสร้างมานานกว่า 3600 วินาที (1 ชั่วโมง) ให้ลบทิ้ง
-        if os.stat(file_path).st_mtime < now - 3600:
+        if os.path.isfile(file_path) and os.stat(file_path).st_mtime < now - 3600:
             try:
                 os.remove(file_path)
                 print(f"🧹 Cleanup: Removed old temporary file: {filename}")
@@ -234,6 +228,9 @@ pcs = set()
 
 @app.post("/offer")
 async def offer(request: Request):
+    if model is None:
+        return JSONResponse(status_code=503, content={"error": "AI model not loaded"})
+    
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
     
@@ -274,14 +271,7 @@ async def offer(request: Request):
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        print(f"📡 [WebRTC: Server] Connection State changed to: {pc.connectionState.upper()}")
-        
-        if pc.connectionState == "failed":
-            print("❌ [WebRTC: ERROR] Connection Failed: ขาดการเชื่อมต่อ หรือ ด่านไฟร์วอลล์บล็อกการส่งข้อมูล UDP อย่างสมบูรณ์")
-        elif pc.connectionState == "closed":
-            print("ℹ️ [WebRTC: INFO] Connection Closed: ผู้ใช้หยุดสตรีม หรือ ปิดหน้าต่างบราวเซอร์")
-
-        if pc.connectionState == "failed" or pc.connectionState == "closed":
+        if pc.connectionState in ("failed", "closed"):
             if hasattr(pc, "local_video_track") and pc.local_video_track.out:
                 pc.local_video_track.out.release()
             pcs.discard(pc)
@@ -297,34 +287,6 @@ async def offer(request: Request):
         if pc.iceGatheringState == "complete":
             break
         await asyncio.sleep(0.1)
-
-    async def log_stats():
-        # 💡 วนลูปวิเคราะห์เพื่อหาหลักฐาน NAT Blocking
-        for _ in range(15): # เช็ก 45 วินาที
-            if pc.connectionState in ["connected", "closed", "failed"]:
-                break
-            try:
-                stats = await pc.getStats()
-                for stat in stats.values():
-                    if getattr(stat, "type", "") == "candidate-pair" and getattr(stat, "state", "") == "failed":
-                        local_id = getattr(stat, "localCandidateId", None)
-                        if local_id and local_id in stats:
-                            local_cand = stats[local_id]
-                            if getattr(local_cand, "candidateType", "") == "srflx":
-                                print(
-                                    "📍 [WebRTC: DIAGNOSTIC] Symmetric NAT Blocking Detected:\n"
-                                    "   เซิร์ฟเวอร์สามารถสร้าง Public IP (srflx) ได้สำเร็จ แต่ไฟร์วอลล์เครือข่ายบล็อกการเชื่อมต่อ UDP ขากลับ\n"
-                                    f"   [หลักฐาน 1] Candidate Type: {getattr(local_cand, 'candidateType', 'N/A').upper()}\n"
-                                    f"   [หลักฐาน 2] Server IP (STUN): {getattr(local_cand, 'ip', 'N/A')}:{getattr(local_cand, 'port', 'N/A')}\n"
-                                    "   [คำแนะนำ: ปรึกษาผู้ดูแลระบบเครือข่าย หรือ ใช้ TURN Server]"
-                                )
-            except Exception:
-                pass
-            await asyncio.sleep(3)
-
-    # แตก Task ให้ทำงานคู่ขนานไปพร้อมกับ WebRTC เพื่อจับผิด
-    asyncio.create_task(log_stats())
-
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
@@ -398,6 +360,9 @@ def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> 
 
 @app.post("/process-video")
 async def process_video(request: Request, file: UploadFile = File(...), threshold: float = Form(0.5), lat: float = Form(0.0), lon: float = Form(0.0)):
+    if model is None:
+        return JSONResponse(status_code=503, content={"error": "AI model not loaded"})
+    
     cleanup_temp_folder()
     print(f"🎬 Received video: {file.filename} (Threshold: {threshold}) Processing...")
 
@@ -409,7 +374,7 @@ async def process_video(request: Request, file: UploadFile = File(...), threshol
         shutil.copyfileobj(file.file, buffer)
 
     # 🚀 รัน video processing ใน thread pool — ไม่บล็อก async event loop
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     unique_detections = await loop.run_in_executor(None, _process_video_sync, temp_input, temp_output, threshold)
 
     # บันทึกผลลัพธ์ลง Database
@@ -432,6 +397,9 @@ async def process_video(request: Request, file: UploadFile = File(...), threshol
 # ==========================================
 @app.post("/process-image")
 async def process_image(request: Request, file: UploadFile = File(...), threshold: float = Form(0.5), lat: float = Form(0.0), lon: float = Form(0.0)): # 🚀 รับค่า Threshold, lat, lon
+    if model is None:
+        return JSONResponse(status_code=503, content={"error": "AI model not loaded"})
+    
     print(f"🖼️ Received image: {file.filename} (Threshold: {threshold}) Scanning...")
     
     # อ่านไฟล์ภาพเข้า RAM ตรงๆ ไม่ต้องเซฟลงดิสก์

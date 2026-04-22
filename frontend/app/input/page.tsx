@@ -172,7 +172,7 @@ export default function InputPage() {
         // เซฟลิงก์วิดีโอใหม่และ Log
         // ใช้ video_filename จาก server + API_BASE_URL ของ frontend
         // เพื่อให้ URL ถูกต้องเสมอ ไม่ว่า backend จะรันอยู่ที่ไหน
-        const videoUrl = `${API_BASE_URL}/temp_videos/${data.video_filename}`;
+        const videoUrl = `${API_BASE_URL.replace(/\/$/, '')}/temp_videos/${data.video_filename}`;
         localStorage.setItem("fod_result_video_url", videoUrl);
         localStorage.setItem("fod_result_logs", JSON.stringify(data.detections));
         router.push("/monitoring");
