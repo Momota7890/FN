@@ -30,6 +30,7 @@ export default function MonitoringPage() {
 
   // 🛰️ State สำหรับ GPS (อัปเดตตลอด)
   const [location, setLocation] = useState<{ lat: number; lon: number }>({ lat: 0, lon: 0 });
+  const locationRef = useRef<{ lat: number; lon: number }>({ lat: 0, lon: 0 });
 
   // 🎯 State สำหรับโชวผลลัพธ์และ Log
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
@@ -95,7 +96,11 @@ export default function MonitoringPage() {
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      (pos) => {
+        const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setLocation(newLoc);
+        locationRef.current = newLoc; // ✅ อัปเดต Ref ด้วยเพื่อให้ setInterval อ่านค่าล่าสุดได้เสมอ
+      },
       (err) => console.error("GPS Watch Error:", err),
       { enableHighAccuracy: true }
     );
@@ -187,11 +192,11 @@ export default function MonitoringPage() {
         console.log("🌐 DataChannel Opened - Starting GPS updates...");
         gpsIntervalRef.current = setInterval(() => {
           if (dataChannelRef.current?.readyState === "open") {
-            // ดึงพิกัดล่าสุดจาก state 'location' มาส่ง
+            // ✅ ดึงพิกัดล่าสุดจาก Ref (ไม่ใช้ state ตรงๆ เพราะ Closure จะจำค่าเก่าไว้)
             const gpsData = {
               type: "gps_update",
-              lat: location.lat || parseFloat(localStorage.getItem("fod_lat") || "0.0"),
-              lon: location.lon || parseFloat(localStorage.getItem("fod_lon") || "0.0")
+              lat: locationRef.current.lat || parseFloat(localStorage.getItem("fod_lat") || "0.0"),
+              lon: locationRef.current.lon || parseFloat(localStorage.getItem("fod_lon") || "0.0")
             };
             dataChannelRef.current.send(JSON.stringify(gpsData));
             console.log("🛰️ GPS Update Sent:", gpsData);
