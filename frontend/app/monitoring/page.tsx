@@ -176,6 +176,7 @@ export default function MonitoringPage() {
 
   const startWebRTC = async () => {
     setAiStatus("connecting");
+    setRecordingFilename(null); // 🚀 ล้างชื่อไฟล์เก่าทิ้งตั้งแต่เริ่มกดปุ่ม (ป้องกันการล้างค่าซ้ำซ้อน)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
       localStreamRef.current = stream; // 🚀 จำไว้ว่าใช้กล้องตัวไหนอยู่
@@ -210,7 +211,7 @@ export default function MonitoringPage() {
         
         // 🎬 รับข้อมูลไฟล์บันทึกจาก Backend
         if (data.type === "recording_info") {
-          console.log("🎬 Recording started:", data.filename);
+          console.log("🎬 Backend confirmed recording filename:", data.filename);
           setRecordingFilename(data.filename);
           return;
         }
@@ -272,7 +273,7 @@ export default function MonitoringPage() {
       const answer = await response.json();
       await pc.setRemoteDescription(answer);
       setIsStreaming(true);
-      setRecordingFilename(null); // เคลียร์ชื่อไฟล์เก่า
+      // 🛑 ลบบรรทัด setRecordingFilename(null) ตรงนี้ออก เพราะเราย้ายไปไว้ข้างบนแล้ว
     } catch (err) {
       stopWebRTC();
       setAiStatus("idle");
