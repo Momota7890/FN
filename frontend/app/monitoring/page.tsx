@@ -353,16 +353,28 @@ export default function MonitoringPage() {
                     System Ready<br/>
                     <span className="text-sm font-medium text-slate-500">Press "Start Live Scan" to begin</span>
                   </div>
-                  
-                  {/* 📥 ปุ่มดาวน์โหลดวิดีโอย้อนหลัง */}
-                  {recordingFilename && (
+                </div>
+              )}
+
+              {/* 📥 ปุ่มดาวน์โหลดวิดีโอย้อนหลัง (แยกออกมาให้เห็นชัดเจน) */}
+              {!isStreaming && recordingFilename && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
+                  <div className="bg-gray-800 p-8 rounded-2xl border border-emerald-500/30 shadow-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
+                    <div className="text-emerald-400 text-lg font-bold uppercase tracking-widest">Recording Ready</div>
+                    <p className="text-slate-400 text-sm mb-2 text-center">Your live session has been saved and processed.</p>
                     <button 
                       onClick={handleDownloadRecording}
-                      className="mt-6 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-105 active:scale-95"
+                      className="flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg hover:scale-105 active:scale-95"
                     >
-                      <span className="text-xl">📥</span> Download Last Recording
+                      <span className="text-2xl">📥</span> Download Recording
                     </button>
-                  )}
+                    <button 
+                      onClick={() => setRecordingFilename(null)}
+                      className="text-slate-500 hover:text-slate-300 text-sm underline mt-2"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
               )}
 

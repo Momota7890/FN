@@ -305,15 +305,14 @@ async def offer(request: Request):
                 raw_path = pc.local_video_track.record_path
                 if os.path.exists(raw_path):
                     filename = os.path.basename(raw_path)
-                    output_path = os.path.join(TEMP_VIDEO_DIR, filename)
+                    output_path = os.path.join(TEMP_DIR, filename)
                     
                     print(f"🔄 Remuxing live recording: {filename}...")
                     try:
-                        # ใช้ asyncio.create_subprocess_exec เพื่อไม่ให้บล็อก
-                        process = await asyncio.create_subprocess_exec(
-                            'ffmpeg', '-y', '-i', raw_path,
-                            '-c', 'copy', '-movflags', '+faststart',
-                            output_path,
+                        # 🚀 ใช้ shell=True (ผ่าน create_subprocess_shell) เพื่อให้ Windows หา ffmpeg ใน PATH เจอ
+                        cmd = f'ffmpeg -y -i "{raw_path}" -c copy -movflags +faststart "{output_path}"'
+                        process = await asyncio.create_subprocess_shell(
+                            cmd,
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE
                         )
