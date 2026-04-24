@@ -27,6 +27,7 @@ export default function MonitoringPage() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // 🛰️ State สำหรับ GPS (อัปเดตตลอด)
   const [location, setLocation] = useState<{ lat: number; lon: number }>({ lat: 0, lon: 0 });
@@ -48,6 +49,11 @@ export default function MonitoringPage() {
     if (gpsIntervalRef.current) {
       clearInterval(gpsIntervalRef.current);
       gpsIntervalRef.current = null;
+    }
+
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
 
     // 1. ปิดการเชื่อมต่อ WebRTC
@@ -204,6 +210,16 @@ export default function MonitoringPage() {
             console.log("🛰️ GPS Update Sent:", gpsData);
           }
         }, 3000); // ส่งทุก 3 วินาที
+
+        // ⏱️ เริ่มส่ง Ping ทุกๆ 1 วินาทีเพื่อวัด Latency ที่แท้จริง (ไม่ต้องสนเวลาเครื่อง)
+        pingIntervalRef.current = setInterval(() => {
+          if (dataChannelRef.current?.readyState === "open") {
+            dataChannelRef.current.send(JSON.stringify({ 
+              type: "ping", 
+              ts: Date.now() / 1000 
+            }));
+          }
+        }, 1000);
       };
 
       dataChannel.onmessage = (event) => {
@@ -216,16 +232,17 @@ export default function MonitoringPage() {
           return;
         }
 
+        // ⏱️ รับค่า Pong เพื่อคำนวณ RTT (Round Trip Time)
+        if (data.type === "pong" && data.ts) {
+          const now = Date.now() / 1000;
+          const rtt = Math.round((now - data.ts) * 1000);
+          setLatency(rtt);
+          setAiStatus("active");
+          return;
+        }
+
         if (data.detections) setDetections(data.detections);
         if (data.fps) setFps(data.fps);
-
-        // 🚀 คำนวณ Latency (ms)
-        if (data.timestamp) {
-          const now = Date.now() / 1000;
-          const delay = Math.max(0, Math.round((now - data.timestamp) * 1000));
-          setLatency(delay);
-          setAiStatus("active");
-        }
       };
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));

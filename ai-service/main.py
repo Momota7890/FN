@@ -271,6 +271,11 @@ async def offer(request: Request):
                         pc.local_video_track.lat = new_lat
                         pc.local_video_track.lon = new_lon
                         print(f"🛰️ GPS Updated via DataChannel: {new_lat}, {new_lon}")
+                elif data.get("type") == "ping":
+                    channel.send(json.dumps({
+                        "type": "pong",
+                        "ts": data.get("ts")
+                    }))
             except Exception as e:
                 print(f"⚠️ Error parsing DataChannel message: {e}")
         
