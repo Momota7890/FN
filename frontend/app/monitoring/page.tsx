@@ -222,7 +222,7 @@ export default function MonitoringPage() {
         // 🚀 คำนวณ Latency (ms)
         if (data.timestamp) {
           const now = Date.now() / 1000;
-          const delay = Math.round((now - data.timestamp) * 1000);
+          const delay = Math.max(0, Math.round((now - data.timestamp) * 1000));
           setLatency(delay);
           setAiStatus("active");
         }
