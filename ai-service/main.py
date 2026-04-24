@@ -170,6 +170,11 @@ class VideoTransformTrack(VideoStreamTrack):
         self.record_path = record_path  # 🚀 จำที่อยู่ไฟล์ไว้ remux
         self.last_saved = {} # เก็บเวลาที่บันทึกล่าสุด {track_id: timestamp}
         
+        # 🚀 เพิ่มตัวแปรสำหรับนับ FPS ตามจริง
+        self.frame_count = 0
+        self.last_fps_time = time.time()
+        self.current_display_fps = 0
+
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.out = cv2.VideoWriter(record_path, fourcc, 30.0, (1280, 720))
 
@@ -177,12 +182,17 @@ class VideoTransformTrack(VideoStreamTrack):
         frame = await self.track.recv()
         img = frame.to_ndarray(format="bgr24")
 
-        start_time = time.time()
+        # 🚀 นับ FPS ตามจำนวนเฟรมที่ผ่านเข้ามาจริง
+        self.frame_count += 1
+        now = time.time()
+        if now - self.last_fps_time >= 1.0:
+            self.current_display_fps = self.frame_count
+            self.frame_count = 0
+            self.last_fps_time = now
+
         # 🚀 ใช้ค่า self.threshold ที่ส่งมาจากหน้าเว็บ
         results = model.track(source=img, conf=self.threshold, persist=True, tracker="bytetrack.yaml", verbose=False, device=0)
         annotated_img = results[0].plot()
-        process_time = time.time() - start_time
-        current_fps = int(1.0 / process_time) if process_time > 0 else 0
 
         detections = []
         if len(results[0].boxes) > 0:
@@ -211,7 +221,7 @@ class VideoTransformTrack(VideoStreamTrack):
         if hasattr(self.pc, "data_channel") and self.pc.data_channel.readyState == "open":
             self.pc.data_channel.send(json.dumps({
                 "detections": detections,
-                "fps": current_fps,
+                "fps": self.current_display_fps,
                 "timestamp": time.time() # 🚀 ส่งเวลาไปวัด Latency
             }))
 

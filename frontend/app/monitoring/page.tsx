@@ -184,7 +184,13 @@ export default function MonitoringPage() {
     setAiStatus("connecting");
     setRecordingFilename(null); // 🚀 ล้างชื่อไฟล์เก่าทิ้งตั้งแต่เริ่มกดปุ่ม (ป้องกันการล้างค่าซ้ำซ้อน)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 }
+        } 
+      });
       localStreamRef.current = stream; // 🚀 จำไว้ว่าใช้กล้องตัวไหนอยู่
       const pc = new RTCPeerConnection({
         iceServers: [
