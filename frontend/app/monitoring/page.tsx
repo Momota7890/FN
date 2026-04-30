@@ -10,6 +10,7 @@ interface Detection {
   id: number;
   class_name: string;
   confidence: number;
+  timestamp?: number; // 🚀 เพิ่ม timestamp สำหรับซิงค์เวลา
 }
 
 export default function MonitoringPage() {
@@ -37,11 +38,11 @@ export default function MonitoringPage() {
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
-  const [recordingFilename, setRecordingFilename] = useState<string | null>(null);
 
   // 🎬 Blob URL สำหรับวิดีโอ (bypass ngrok interstitial)
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
+  const [currentVideoTime, setCurrentVideoTime] = useState<number>(0); // 🚀 เก็บเวลาปัจจุบันของวิดีโอ
 
   // ✅ นิยามโดยใช้ useCallback เพื่อให้ stopWebRTC เล่าหลาย (stable reference) และ useEffect depสถูกต้อง
   const stopWebRTC = useCallback(() => {
@@ -163,13 +164,16 @@ export default function MonitoringPage() {
         setResultVideoUrl(null);
         setMode("image");
         localStorage.setItem("fod_mode", "image");
+        localStorage.setItem("fod_result_image", data.processed_image);
       } else {
         setResultVideoUrl(data.video_url);
         setResultImage(null);
         setMode("video");
         localStorage.setItem("fod_mode", "video");
+        localStorage.setItem("fod_result_video_url", data.video_url);
       }
       setDetections(data.detections);
+      localStorage.setItem("fod_result_logs", JSON.stringify(data.detections)); // 🚀 สำคัญ: ต้องเซฟ log ด้วยเผื่อรีเฟรชหน้า
 
       console.log("✅ วิเคราะห์ข้อมูลใหม่สำเร็จ!");
     } catch (err) {
@@ -182,7 +186,6 @@ export default function MonitoringPage() {
 
   const startWebRTC = async () => {
     setAiStatus("connecting");
-    setRecordingFilename(null); // 🚀 ล้างชื่อไฟล์เก่าทิ้งตั้งแต่เริ่มกดปุ่ม (ป้องกันการล้างค่าซ้ำซ้อน)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
@@ -231,13 +234,6 @@ export default function MonitoringPage() {
       dataChannel.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        // 🎬 รับข้อมูลไฟล์บันทึกจาก Backend
-        if (data.type === "recording_info") {
-          console.log("🎬 Backend confirmed recording filename:", data.filename);
-          setRecordingFilename(data.filename);
-          return;
-        }
-
         // ⏱️ รับค่า Pong เพื่อคำนวณ RTT (Round Trip Time)
         if (data.type === "pong" && data.ts) {
           const now = Date.now() / 1000;
@@ -296,7 +292,6 @@ export default function MonitoringPage() {
       const answer = await response.json();
       await pc.setRemoteDescription(answer);
       setIsStreaming(true);
-      // 🛑 ลบบรรทัด setRecordingFilename(null) ตรงนี้ออก เพราะเราย้ายไปไว้ข้างบนแล้ว
     } catch (err) {
       stopWebRTC();
       setAiStatus("idle");
@@ -305,28 +300,6 @@ export default function MonitoringPage() {
   };
 
 
-
-  // 📥 ฟังก์ชันสำหรับดาวน์โหลดไฟล์บันทึก
-  const handleDownloadRecording = async () => {
-    if (!recordingFilename) return;
-    const downloadUrl = `${API_ENDPOINTS.STATIC_VIDEOS}/${recordingFilename}`;
-    
-    try {
-      const res = await fetch(downloadUrl, { headers: { 'ngrok-skip-browser-warning': 'skip' } });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `FOD_Recording_${recordingFilename}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error("Download failed:", err);
-      alert("Failed to download recording. It might still be processing.");
-    }
-  };
 
   // 🎨 Color mapping (Sync with Dashboard)
   const getClassColor = (name: string) => {
@@ -380,27 +353,7 @@ export default function MonitoringPage() {
                 </div>
               )}
 
-              {/* 📥 ปุ่มดาวน์โหลดวิดีโอย้อนหลัง (แยกออกมาให้เห็นชัดเจน) */}
-              {!isStreaming && recordingFilename && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
-                  <div className="bg-gray-800 p-8 rounded-2xl border border-emerald-500/30 shadow-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
-                    <div className="text-emerald-400 text-lg font-bold uppercase tracking-widest">Recording Ready</div>
-                    <p className="text-slate-400 text-sm mb-2 text-center">Your live session has been saved and processed.</p>
-                    <button 
-                      onClick={handleDownloadRecording}
-                      className="flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg hover:scale-105 active:scale-95"
-                    >
-                      <span className="text-2xl">📥</span> Download Recording
-                    </button>
-                    <button 
-                      onClick={() => setRecordingFilename(null)}
-                      className="text-slate-500 hover:text-slate-300 text-sm underline mt-2"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              )}
+
 
               {!isStreaming && aiStatus === "connecting" && (
                 <div className="flex flex-col items-center gap-4">
@@ -418,7 +371,13 @@ export default function MonitoringPage() {
                   <p className="text-sm font-mono">Loading video...</p>
                 </div>
               : videoBlobUrl
-                ? <video src={videoBlobUrl} controls autoPlay className="w-full aspect-video bg-black object-contain rounded-xl border border-green-500" />
+                ? <video 
+                    src={videoBlobUrl} 
+                    controls 
+                    autoPlay 
+                    className="w-full aspect-video bg-black object-contain rounded-xl border border-green-500"
+                    onTimeUpdate={(e) => setCurrentVideoTime(e.currentTarget.currentTime)} // 🚀 อัปเดตเวลา
+                  />
                 : resultVideoUrl && <p className="text-red-400 text-sm text-center">⚠️ Video unavailable — check backend connection</p>
           )}
           {mode === "image" && resultImage && <img src={resultImage} alt="Result" className="w-full max-h-[600px] object-contain rounded-xl border border-purple-500" />}
@@ -444,21 +403,32 @@ export default function MonitoringPage() {
           <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[400px]">
             <h3 className="text-xl font-bold mb-4 border-b border-gray-600 pb-2">🎯 Recent Detections</h3>
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              {detections.length > 0 ? (
-                <ul className="space-y-3">
-                  {detections.map((det, idx) => {
-                    const colors = getClassColor(det.class_name);
+              {(() => {
+                // 🚀 กรองข้อมูลขยะให้แสดงเฉพาะที่ผ่านเวลาในวิดีโอมาแล้ว
+                const visibleDetections = mode === "video" 
+                  ? detections.filter(d => d.timestamp === undefined || d.timestamp <= currentVideoTime)
+                  : detections;
+
+                return visibleDetections.length > 0 ? (
+                  <ul className="space-y-3">
+                    {visibleDetections.map((det, idx) => {
+                      const colors = getClassColor(det.class_name);
                     return (
                       <li key={idx} className={`p-3 rounded-lg border-l-4 ${colors.border} ${colors.bg} flex justify-between items-center transition-all animate-fade-in`}>
                         <span className={`font-bold ${colors.text} text-sm`}>
                           [{det.id !== -1 ? `ID:${det.id}` : 'Detected'}] {det.class_name}
                         </span>
-                        <span className="bg-gray-900/50 px-2 py-1 rounded text-xs font-mono border border-gray-700">{det.confidence}%</span>
+                        <span className="font-mono">{det.confidence}%</span>
                       </li>
                     );
                   })}
                 </ul>
-              ) : <div className="text-gray-500 text-center mt-10">No objects detected</div>}
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-500">
+                    <p className="flex items-center gap-2"><span className="text-2xl animate-pulse">👀</span> Scanning for FOD...</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -56,11 +56,27 @@ def create_access_token(data: dict):
 # ฟังก์ชันนี้จะรันอัตโนมัติตอนเปิดรัน uvicorn
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. เชื่อมต่อฐานข้อมูล
+    # --- 1. เริ่มระบบ CodeCarbon (ทำงานเบื้องหลัง) ---
+    try:
+        from codecarbon import OfflineEmissionsTracker
+        app.state.tracker = OfflineEmissionsTracker(
+            project_name="FOD_AI_Service",
+            country_iso_code="THA", 
+            measure_power_secs=15,
+            save_to_file=False, # ปิดระบบเซฟไฟล์อัตโนมัติของ CodeCarbon
+            log_level="error"
+        )
+        app.state.tracker.start()
+        print("🌱 CodeCarbon Background Tracker Started")
+    except Exception as e:
+        print(f"⚠️ Failed to start CodeCarbon: {e}")
+        app.state.tracker = None
+
+    # --- 2. เชื่อมต่อฐานข้อมูล ---
     try:
         app.state.db_pool = await asyncpg.create_pool(DATABASE_URL, timeout=10)
         
-        # 2. สร้างตารางถ้ายังไม่มี
+        # สร้างตารางถ้ายังไม่มี
         async with app.state.db_pool.acquire() as connection:
             await connection.execute('''
                 CREATE TABLE IF NOT EXISTS events (
@@ -86,15 +102,64 @@ async def lifespan(app: FastAPI):
     
     yield # ปล่อยให้ Server รันต่อไป
     
-    # 3. ปิดการเชื่อมต่อตอนปิด Server
+    # --- 3. ปิดระบบตอนปิด Server ---
     if app.state.db_pool:
         await app.state.db_pool.close()
+        
+    if hasattr(app.state, 'tracker') and app.state.tracker:
+        try:
+            emissions = app.state.tracker.stop()
+            print(f"🌱 CodeCarbon Stopped! Total Emissions: {emissions} kg CO2eq")
+            
+            # --- อัปเดตไฟล์ CSV แบบไฟล์เดียวและมีหน่วยกำกับ ---
+            import pandas as pd
+            import os
+            
+            # 1. ดึงข้อมูล 1 แถวล่าสุดมาแปลงเป็น Dictionary
+            data = app.state.tracker.final_emissions_data
+            row_dict = dict(data.values) if hasattr(data, 'values') else vars(data)
+            
+            # 2. แปลงชื่อคอลัมน์ให้มีหน่วย
+            rename_map = {
+                "duration": "duration (Seconds)",
+                "emissions": "emissions (kg CO2eq)",
+                "emissions_rate": "emissions_rate (kg/sec)",
+                "cpu_power": "cpu_power (Watts)",
+                "gpu_power": "gpu_power (Watts)",
+                "ram_power": "ram_power (Watts)",
+                "cpu_energy": "cpu_energy (kWh)",
+                "gpu_energy": "gpu_energy (kWh)",
+                "ram_energy": "ram_energy (kWh)",
+                "energy_consumed": "total_energy_consumed (kWh)",
+                "carbon_intensity": "carbon_intensity (gCO2eq/kWh)"
+            }
+            new_row = {rename_map.get(k, k): v for k, v in row_dict.items()}
+            df_new = pd.DataFrame([new_row])
+            
+            # 3. เซฟลง emissions.csv (ถ้ามีของเดิมก็เอามาต่อท้าย)
+            file_name = "emissions.csv"
+            if os.path.exists(file_name):
+                df_old = pd.read_csv(file_name)
+                df_combined = pd.concat([df_old, df_new], ignore_index=True)
+            else:
+                df_combined = df_new
+                
+            df_combined.to_csv(file_name, index=False)
+            print(f"✅ Saved directly to {file_name} with unit headers.")
+            
+            # (ทางเลือก) ลบไฟล์ที่ไม่ได้ใช้ออกเพื่อความสะอาด
+            if os.path.exists("emissions_with_units.csv"):
+                os.remove("emissions_with_units.csv")
+
+        except Exception as e:
+            print(f"⚠️ Error stopping CodeCarbon: {e}")
 
 app = FastAPI(lifespan=lifespan)
 
 # ==========================================
 # 🗂️ จัดการโฟลเดอร์แบบ "ไม่เก็บขยะ" (เซฟเฉพาะโหมดกล้อง)
 # ==========================================
+
 RECORD_DIR = "videorecord"           # เก็บไฟล์จากกล้องสด (ถาวร)
 TEMP_DIR = "temp_workspace"          # พื้นที่ทำงานชั่วคราวสำหรับโหมด Video
 
@@ -174,65 +239,114 @@ class VideoTransformTrack(VideoStreamTrack):
         self.frame_count = 0
         self.last_fps_time = time.time()
         self.current_display_fps = 0
+        
+        # ⏱️ ตัวแปรสำหรับเก็บเวลา Debug
+        self.total_ai_time = 0
+        self.total_io_time = 0
+        self.total_loop_time = 0
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.out = cv2.VideoWriter(record_path, fourcc, 30.0, (1280, 720))
 
     async def recv(self):
+        # ⏱️ จับเวลาการทำงานทั้งหมดในลูป
+        t_start_loop = time.perf_counter()
+        
+        # --- 1. เคลียร์คิว/ดึงภาพใหม่ล่าสุด ---
+        import asyncio
         frame = await self.track.recv()
+        # Drop old frames to ensure Real-Time
+        while True:
+            try:
+                next_frame = await asyncio.wait_for(self.track.recv(), timeout=0.001)
+                frame = next_frame
+            except asyncio.TimeoutError:
+                break
+                
         img = frame.to_ndarray(format="bgr24")
 
-        # 🚀 นับ FPS ตามจำนวนเฟรมที่ผ่านเข้ามาจริง
         self.frame_count += 1
         now = time.time()
+        
+        # --- 2. ฟังก์ชันย่อยสำหรับรันงานหนัก (จะถูกโยนไปรันใน Thread) ---
+        def process_heavy_tasks(image):
+            t_ai = time.perf_counter()
+            # รัน AI
+            res = model.track(source=image, conf=self.threshold, persist=True, tracker="bytetrack.yaml", verbose=False, device=0)
+            annotated = res[0].plot()
+            ai_time = time.perf_counter() - t_ai
+            
+            # ดึงข้อมูล
+            dets = []
+            if len(res[0].boxes) > 0:
+                for box in res[0].boxes:
+                    class_id = int(box.cls[0])
+                    name = model.names[class_id]
+                    conf = float(box.conf[0])
+                    tid = int(box.id[0]) if box.id is not None else -1 
+                    dets.append({
+                        "id": tid,
+                        "class_name": name, 
+                        "confidence": round(conf * 100, 2)
+                    })
+            
+            # ย่อขนาด (ใช้ CPU)
+            annotated = cv2.resize(annotated, (1280, 720), interpolation=cv2.INTER_CUBIC)
+            
+            # เขียนไฟล์ลงดิสก์ (I/O)
+            t_io = time.perf_counter()
+            if self.out.isOpened():
+                self.out.write(annotated)
+            io_time = time.perf_counter() - t_io
+            
+            return annotated, dets, ai_time, io_time
+            
+        # 🚀 3. สั่งรันใน Background Thread ไม่ให้บล็อกเน็ตเวิร์ก!
+        annotated_img, detections, ai_time_taken, io_time_taken = await asyncio.to_thread(process_heavy_tasks, img)
+        
+        # อัปเดตเวลา Debug
+        self.total_ai_time += ai_time_taken
+        self.total_io_time += io_time_taken
+
+        # 🚀 4. อัปเดตฐานข้อมูล (แบบ Async)
+        current_time = time.time()
+        for det in detections:
+            track_id = det["id"]
+            if track_id != -1:
+                last_time = self.last_saved.get(track_id, 0)
+                if current_time - last_time > 10:
+                    if self.pool:
+                        asyncio.create_task(save_event_to_db(self.pool, det["class_name"], det["confidence"], self.lat, self.lon))
+                        self.last_saved[track_id] = current_time
+
+        # --- 5. อัปเดต FPS Debug ---
         if now - self.last_fps_time >= 1.0:
             self.current_display_fps = self.frame_count
+            avg_ai = (self.total_ai_time / self.frame_count) * 1000 if self.frame_count else 0
+            avg_io = (self.total_io_time / self.frame_count) * 1000 if self.frame_count else 0
+            avg_loop = (self.total_loop_time / self.frame_count) * 1000 if self.frame_count else 0
+            print(f"🚀 [OPTIMIZED FPS: {self.current_display_fps}] AI={avg_ai:.1f}ms, Disk={avg_io:.1f}ms, Total={avg_loop:.1f}ms")
+            
             self.frame_count = 0
             self.last_fps_time = now
+            self.total_ai_time = 0
+            self.total_io_time = 0
+            self.total_loop_time = 0
 
-        # 🚀 ใช้ค่า self.threshold ที่ส่งมาจากหน้าเว็บ
-        results = model.track(source=img, conf=self.threshold, persist=True, tracker="bytetrack.yaml", verbose=False, device=0)
-        annotated_img = results[0].plot()
-
-        detections = []
-        if len(results[0].boxes) > 0:
-            for box in results[0].boxes:
-                class_id = int(box.cls[0])
-                class_name = model.names[class_id]
-                confidence = float(box.conf[0])
-                track_id = int(box.id[0]) if box.id is not None else -1 
-                
-                detections.append({
-                    "id": track_id,
-                    "class_name": class_name, 
-                    "confidence": round(confidence * 100, 2)
-                })
-
-                # 🚀 ตรวจสอบคูลดาวน์ 10 วินาทีก่อนบันทึก
-                current_time = time.time()
-                if track_id != -1:
-                    last_time = self.last_saved.get(track_id, 0)
-                    if current_time - last_time > 10:
-                        if self.pool:
-                            # ใช้ create_task เพื่อไม่ให้บล็อกเฟรมวิดีโอ
-                            asyncio.create_task(save_event_to_db(self.pool, class_name, confidence * 100, self.lat, self.lon))
-                            self.last_saved[track_id] = current_time
-
+        # --- 6. ส่งข้อมูลกลับหน้าเว็บ ---
         if hasattr(self.pc, "data_channel") and self.pc.data_channel.readyState == "open":
             self.pc.data_channel.send(json.dumps({
                 "detections": detections,
                 "fps": self.current_display_fps,
-                "timestamp": time.time() # 🚀 ส่งเวลาไปวัด Latency
+                "timestamp": time.time() 
             }))
-
-        annotated_img = cv2.resize(annotated_img, (1280, 720), interpolation=cv2.INTER_CUBIC)
-
-        if self.out.isOpened():
-            self.out.write(annotated_img)
 
         new_frame = av.VideoFrame.from_ndarray(annotated_img, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
+        
+        self.total_loop_time += (time.perf_counter() - t_start_loop)
+        
         return new_frame
 
 pcs = set()
@@ -289,16 +403,6 @@ async def offer(request: Request):
             except Exception as e:
                 print(f"⚠️ Error parsing DataChannel message: {e}")
         
-        # 🚀 ส่งชื่อไฟล์บันทึกให้ Frontend ทันทีที่ DataChannel พร้อม
-        @channel.on("open")
-        def on_open():
-            if hasattr(pc, "local_video_track"):
-                filename = os.path.basename(pc.local_video_track.record_path)
-                channel.send(json.dumps({
-                    "type": "recording_info",
-                    "filename": filename
-                }))
-                print(f"🎬 Sent recording info: {filename}")
 
     @pc.on("track")
     def on_track(track):
@@ -315,26 +419,8 @@ async def offer(request: Request):
         if pc.connectionState in ("failed", "closed"):
             if hasattr(pc, "local_video_track") and pc.local_video_track.out:
                 pc.local_video_track.out.release()
-                
-                # 🚀 เริ่มการ Remux วิดีโอให้เล่นบน Browser ได้ (+faststart)
                 raw_path = pc.local_video_track.record_path
-                if os.path.exists(raw_path):
-                    filename = os.path.basename(raw_path)
-                    output_path = os.path.join(TEMP_DIR, filename)
-                    
-                    print(f"🔄 Remuxing live recording: {filename}...")
-                    try:
-                        # 🚀 ใช้ shell=True (ผ่าน create_subprocess_shell) เพื่อให้ Windows หา ffmpeg ใน PATH เจอ
-                        cmd = f'ffmpeg -y -i "{raw_path}" -c copy -movflags +faststart "{output_path}"'
-                        process = await asyncio.create_subprocess_shell(
-                            cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE
-                        )
-                        await process.communicate()
-                        print(f"✅ Live recording remuxed and moved to temp: {output_path}")
-                    except Exception as e:
-                        print(f"❌ Remux error: {e}")
+                print(f"✅ Live recording saved to: {raw_path}")
             
             pcs.discard(pc)
 
@@ -369,10 +455,13 @@ def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> 
     writer = imageio.get_writer(raw_output, fps=fps, codec='libx264')
     unique_detections = {}
 
+    frame_idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
+            
+        frame_idx += 1
 
         # ✅ ใช้ model.track() + ByteTrack (ต้องใช้ lapx แทน lap เพื่อหลีกเลี่ยง WDAC)
         results = model.track(source=frame, conf=threshold, persist=True, tracker="bytetrack.yaml", verbose=False, device=0)
@@ -387,12 +476,17 @@ def _process_video_sync(temp_input: str, temp_output: str, threshold: float) -> 
                     track_id = int(box.id[0])
                     key = f"{class_name}_{track_id}"
 
-                    if key not in unique_detections or conf > unique_detections[key]["confidence"]:
+                    # ถ้าเพิ่งเจอวัตถุนี้ครั้งแรก ให้เซฟวินาทีที่เจอเข้าไปด้วย
+                    if key not in unique_detections:
                         unique_detections[key] = {
                             "id": track_id,
                             "class_name": class_name,
-                            "confidence": round(conf * 100, 2)
+                            "confidence": round(conf * 100, 2),
+                            "timestamp": round(frame_idx / fps, 2)
                         }
+                    # ถ้าเจอวัตถุเดิมแต่มั่นใจกว่าเดิม ก็อัปเดตแค่ความมั่นใจ (ไม่เปลี่ยนเวลาเริ่ม)
+                    elif conf > unique_detections[key]["confidence"]:
+                        unique_detections[key]["confidence"] = round(conf * 100, 2)
 
         annotated_frame = cv2.resize(annotated_frame, (1280, 720), interpolation=cv2.INTER_CUBIC)
         rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
